@@ -1,10 +1,18 @@
 'use client';
 
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Search, Plus, User, LogIn } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  User,
+  LogIn,
+  Sparkles,
+  ArrowRight,
+  Flame,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { ListingCard } from '@/components/listing-card';
 import { FilterBar } from '@/components/filter-bar';
@@ -26,7 +34,6 @@ function HomePageContent() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [selectedListingId, setSelectedListingId] = useState<string | null>(null);
 
-  // Check URL params for listing ID on mount
   useEffect(() => {
     const listingId = searchParams.get('listing');
     if (listingId) {
@@ -36,10 +43,15 @@ function HomePageContent() {
 
   const handleCloseListing = () => {
     setSelectedListingId(null);
-    // Clean up URL params
     if (searchParams.get('listing')) {
       router.push('/');
     }
+  };
+
+  const toggleTag = (slug: string) => {
+    setTags((prev) =>
+      prev.includes(slug) ? prev.filter((tag) => tag !== slug) : [...prev, slug],
+    );
   };
 
   const { data: currentUser, refetch: refetchUser } = useQuery({
@@ -48,7 +60,38 @@ function HomePageContent() {
     retry: false,
   });
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
+  const handleCreateClick = () => {
+    if (currentUser) {
+      setIsCreateOpen(true);
+    } else {
+      setIsAuthOpen(true);
+    }
+  };
+
+  const { data: filtersData } = useQuery({
+    queryKey: ['filters'],
+    queryFn: api.getFilters,
+  });
+
+  const { data: pinnedListingData } = useQuery({
+    queryKey: ['pinnedListing'],
+    queryFn: api.getPinnedListing,
+    staleTime: 1000 * 60,
+  });
+
+  const pinnedListing = pinnedListingData ?? null;
+
+  const categories = filtersData?.categories ?? [];
+  const popularTags = useMemo(() => filtersData?.tags?.slice(0, 6) ?? [], [filtersData]);
+  const spotlightCategories = useMemo(() => categories.slice(0, 3), [categories]);
+
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+  } = useInfiniteQuery({
     queryKey: ['listings', search, category, tags],
     queryFn: ({ pageParam }) =>
       api.getListings({
@@ -62,140 +105,397 @@ function HomePageContent() {
   });
 
   const listings = data?.pages.flatMap((page) => page.items) || [];
+  const visibleListings = useMemo(
+    () => (pinnedListing ? listings.filter((listing) => listing.id !== pinnedListing.id) : listings),
+    [listings, pinnedListing?.id],
+  );
+  const featuredListing = pinnedListing ?? listings[0];
+  const heroSectionLabel = pinnedListing ? 'Закреплённое объявление' : 'Рекомендуемое объявление';
+  const heroBadgeLabel = pinnedListing ? 'Платное размещение' : 'Популярное сейчас';
+
+  const stats = useMemo(
+    () => [
+      {
+        label: 'Активных объявлений',
+        value: new Intl.NumberFormat('ru-RU').format(listings.length || 0),
+      },
+      {
+        label: 'Категорий на выбор',
+        value: new Intl.NumberFormat('ru-RU').format(categories.length || 0),
+      },
+      {
+        label: 'Популярных тегов',
+        value: new Intl.NumberFormat('ru-RU').format(popularTags.length || 0),
+      },
+    ],
+    [categories.length, listings.length, popularTags.length],
+  );
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold">🏘 Кавалерово</h1>
-            <div className="flex items-center gap-3">
-              {currentUser ? (
-                <>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      window.location.href = '/profile';
-                    }}
-                  >
-                    <User className="w-4 h-4 mr-2" />
-                    Личный кабинет
-                  </Button>
-                  <MotionButton
-                    layoutId="create-listing"
-                    onClick={() => setIsCreateOpen(true)}
-                    className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.97 }}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Создать
-                  </MotionButton>
-                </>
-              ) : (
-                <>
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsAuthOpen(true)}
-                  >
-                    <LogIn className="w-4 h-4 mr-2" />
-                    Вход
-                  </Button>
-                  <MotionButton
-                    layoutId="create-listing"
-                    onClick={() => setIsCreateOpen(true)}
-                    className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.97 }}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Создать
-                  </MotionButton>
-                </>
-              )}
+    <div className="relative isolate min-h-screen overflow-x-hidden bg-slate-950">
+      <div
+        className="pointer-events-none absolute inset-x-0 top-[-320px] -z-10 h-[720px] bg-gradient-to-b from-indigo-500/60 via-purple-500/30 to-transparent blur-3xl"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute -left-32 top-24 -z-10 h-80 w-80 rounded-full bg-sky-500/30 blur-3xl"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute -right-24 top-20 -z-10 h-[340px] w-[340px] rounded-full bg-fuchsia-500/25 blur-3xl"
+        aria-hidden
+      />
+
+      <header className="relative z-30">
+        <div className="container mx-auto flex flex-wrap items-center justify-between gap-4 px-4 py-6 text-white">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/15 bg-white/10 backdrop-blur">
+              <Sparkles className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-lg font-semibold tracking-tight">KavMarket</p>
+              <p className="text-sm text-white/60">Городской маркетплейс Кавалерово</p>
             </div>
           </div>
 
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Поиск объявлений..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-10"
-            />
+          <div className="flex items-center gap-3">
+            {currentUser ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => router.push('/profile')}
+                  className="border-white/20 bg-white/10 text-white transition hover:bg-white/20"
+                >
+                  <User className="mr-2 h-4 w-4" />
+                  Профиль
+                </Button>
+                <MotionButton
+                  layoutId="create-listing"
+                  onClick={() => setIsCreateOpen(true)}
+                  className="bg-gradient-to-r from-fuchsia-500 via-indigo-500 to-sky-500 text-white shadow-[0_20px_65px_-25px_rgba(79,70,229,0.85)] transition hover:shadow-[0_25px_70px_-20px_rgba(79,70,229,0.95)]"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.97 }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Разместить объявление
+                </MotionButton>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsAuthOpen(true)}
+                  className="border-white/20 bg-white/10 text-white transition hover:bg-white/20"
+                >
+                  <LogIn className="mr-2 h-4 w-4" />
+                  Войти
+                </Button>
+                <MotionButton
+                  layoutId="create-listing"
+                  onClick={handleCreateClick}
+                  className="bg-gradient-to-r from-fuchsia-500 via-indigo-500 to-sky-500 text-white shadow-[0_20px_65px_-25px_rgba(79,70,229,0.85)] transition hover:shadow-[0_25px_70px_-20px_rgba(79,70,229,0.95)]"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.97 }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Разместить объявление
+                </MotionButton>
+              </>
+            )}
           </div>
-
-          <FilterBar
-            selectedCategory={category}
-            onCategoryChange={setCategory}
-            selectedTags={tags}
-            onTagsChange={setTags}
-          />
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-6">
-        {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-64 bg-muted rounded-lg animate-pulse" />
-            ))}
-          </div>
-        ) : listings.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">Объявления не найдены</p>
-          </div>
-        ) : (
-          <>
-            <motion.div
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
-            >
-              {listings.map((listing, index) => (
-                <motion.div
-                  key={listing.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                >
-                  <ListingCard
-                    listing={listing}
-                    onClick={() => setSelectedListingId(listing.id)}
-                  />
-                </motion.div>
-              ))}
-            </motion.div>
+      <section className="relative z-20">
+        <div className="container mx-auto px-4 pb-40 pt-6 text-white">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: 'easeOut' }}
+            className="max-w-3xl"
+          >
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-1 text-sm text-white/80 backdrop-blur">
+              <Sparkles className="h-4 w-4 text-white" />
+              Добро пожаловать в городское комьюнити
+            </span>
+            <h1 className="mt-6 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
+              Находите и делитесь лучшими объявлениями в Кавалерово
+            </h1>
+            <p className="mt-4 text-lg text-white/70 sm:text-xl">
+              Локальные услуги, работа, товары и события — всё, что важно вашему району, в одном месте.
+            </p>
+          </motion.div>
 
-            {hasNextPage && (
-              <div className="mt-8 text-center">
-                <Button
-                  onClick={() => fetchNextPage()}
-                  disabled={isFetchingNextPage}
-                  variant="outline"
-                >
-                  {isFetchingNextPage ? 'Загрузка...' : 'Показать еще'}
-                </Button>
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1, duration: 0.6, ease: 'easeOut' }}
+            className="mt-10 flex flex-col gap-4 md:flex-row md:items-center"
+          >
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-white/60" />
+              <Input
+                type="search"
+                placeholder="Что ищем сегодня? Например, репетитора или свежие вакансии"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-14 rounded-2xl border border-white/20 bg-white/10 pl-14 text-lg text-white placeholder:text-white/50 focus-visible:ring-white/40"
+              />
+            </div>
+            <MotionButton
+              layoutId="create-listing-hero"
+              onClick={handleCreateClick}
+              className="h-14 rounded-2xl bg-gradient-to-r from-amber-400 via-rose-500 to-indigo-500 px-8 text-base font-semibold text-white shadow-lg shadow-rose-500/40 transition hover:shadow-rose-500/50"
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+            >
+              <Plus className="mr-2 h-5 w-5" />
+              Добавить объявление
+            </MotionButton>
+          </motion.div>
+
+          {spotlightCategories.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, duration: 0.5 }}
+              className="mt-6 flex flex-wrap items-center gap-3"
+            >
+              {spotlightCategories.map((cat) => {
+                const isActive = category === cat.slug;
+                return (
+                  <motion.button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setCategory(isActive ? '' : cat.slug)}
+                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition ${
+                      isActive
+                        ? 'border-white bg-white/20 text-white shadow-lg shadow-white/30'
+                        : 'border-white/15 bg-white/5 text-white/80 hover:border-white/30 hover:bg-white/10 hover:text-white'
+                    }`}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                  >
+                    <Flame className="h-4 w-4" />
+                    {cat.name}
+                  </motion.button>
+                );
+              })}
+            </motion.div>
+          )}
+
+          {popularTags.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.25, duration: 0.5 }}
+              className="mt-4 flex flex-wrap gap-2"
+            >
+              {popularTags.map((tag: any) => {
+                const active = tags.includes(tag.slug);
+                return (
+                  <motion.button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => toggleTag(tag.slug)}
+                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition ${
+                      active
+                        ? 'border-white bg-white/20 text-white shadow-lg shadow-white/20'
+                        : 'border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:bg-white/10 hover:text-white'
+                    }`}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.97 }}
+                  >
+                    #{tag.name}
+                  </motion.button>
+                );
+              })}
+            </motion.div>
+          )}
+
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35, duration: 0.6 }}
+            className="mt-10 grid gap-4 sm:grid-cols-3"
+          >
+            {stats.map((item) => (
+              <div
+                key={item.label}
+                className="rounded-2xl border border-white/15 bg-white/10 p-6 backdrop-blur"
+              >
+                <p className="text-sm uppercase tracking-wide text-white/60">{item.label}</p>
+                <p className="mt-2 text-3xl font-semibold">{item.value}</p>
               </div>
+            ))}
+          </motion.div>
+
+          {featuredListing && (
+            <motion.div
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.45, duration: 0.6 }}
+              className="mt-12 grid gap-6 lg:grid-cols-[1.1fr_minmax(0,0.9fr)]"
+            >
+              <div className="relative overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-white/10 to-white/5 p-6 backdrop-blur">
+                <div className="flex items-center gap-3">
+                  <p className="text-sm uppercase tracking-wide text-white/60">{heroSectionLabel}</p>
+                  <span
+                    className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold tracking-wide ${
+                      pinnedListing
+                        ? 'border-amber-300/40 bg-amber-400/15 text-amber-100'
+                        : 'border-white/20 bg-white/10 text-white/70'
+                    }`}
+                  >
+                    {heroBadgeLabel}
+                  </span>
+                </div>
+                <h3 className="mt-4 text-2xl font-semibold leading-snug line-clamp-2">
+                  {featuredListing.title}
+                </h3>
+                {featuredListing.description && (
+                  <p className="mt-3 text-sm text-white/70 line-clamp-3">
+                    {featuredListing.description}
+                  </p>
+                )}
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <Button
+                    onClick={() => setSelectedListingId(featuredListing.id)}
+                    className="bg-white/90 text-slate-900 hover:bg-white"
+                  >
+                    Подробнее
+                  </Button>
+                  {featuredListing.category?.name && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (featuredListing.category?.slug) {
+                          setCategory(featuredListing.category.slug);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 text-sm text-white/70 transition hover:text-white"
+                    >
+                      Смотреть категорию
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="relative overflow-hidden rounded-3xl border border-white/15 bg-white/5">
+                {featuredListing.photos?.length ? (
+                  <>
+                    <img
+                      src={`/api/photos/${featuredListing.photos[0].s3Key}`}
+                      alt={featuredListing.title}
+                      className="h-full w-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-tr from-slate-900/30 via-transparent to-transparent" />
+                  </>
+                ) : (
+                  <div className="flex h-full min-h-[260px] items-center justify-center bg-white/5 text-white/50">
+                    Фото пока нет
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </div>
+      </section>
+
+      <main className="relative z-30 mt-[-140px] rounded-t-[48px] bg-background pb-20 text-slate-900 shadow-[0_-40px_90px_-50px_rgba(30,41,59,0.6)]">
+        <div className="container mx-auto px-4">
+          <div className="relative -top-16">
+            <div className="rounded-3xl border border-slate-200/60 bg-white/80 p-6 shadow-2xl backdrop-blur">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Найдите то, что нужно</h2>
+                  <p className="text-sm text-slate-500">
+                    Отфильтруйте объявления по категориям и тегам, чтобы увидеть самое актуальное
+                  </p>
+                </div>
+              </div>
+              <FilterBar
+                selectedCategory={category}
+                onCategoryChange={setCategory}
+                selectedTags={tags}
+                onTagsChange={setTags}
+              />
+            </div>
+          </div>
+
+          <section className="mt-4">
+            {isLoading ? (
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+                {[...Array(6)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="h-72 rounded-3xl border border-slate-200/60 bg-white/70 shadow animate-pulse"
+                  />
+                ))}
+              </div>
+        ) : visibleListings.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/70 py-16 text-center shadow-inner">
+                <Sparkles className="h-10 w-10 text-slate-400" />
+                <p className="mt-4 text-lg font-medium text-slate-700">Пока ничего не найдено</p>
+                <p className="mt-1 max-w-md text-sm text-slate-500">
+                  Попробуйте изменить запрос или выберите другую категорию, чтобы увидеть больше объявлений.
+                </p>
+              </div>
+            ) : (
+              <>
+                <motion.div
+                  className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  {visibleListings.map((listing, index) => (
+                    <motion.div
+                      key={listing.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.03 }}
+                    >
+                      <ListingCard
+                        listing={listing}
+                        onClick={() => setSelectedListingId(listing.id)}
+                      />
+                    </motion.div>
+                  ))}
+                </motion.div>
+
+                {hasNextPage && (
+                  <div className="mt-10 text-center">
+                    <MotionButton
+                      onClick={() => fetchNextPage()}
+                      disabled={isFetchingNextPage}
+                      variant="outline"
+                      className="border-slate-300 bg-white/80 text-slate-700 transition hover:bg-white"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.96 }}
+                    >
+                      {isFetchingNextPage ? 'Загружаем ещё...' : 'Показать больше объявлений'}
+                    </MotionButton>
+                  </div>
+                )}
+              </>
             )}
-          </>
-        )}
+          </section>
+        </div>
       </main>
 
       <AnimatePresence>
-        {isCreateOpen && (
-          <CreateListingDialog onOpenChange={setIsCreateOpen} />
-        )}
+        {isCreateOpen && <CreateListingDialog onOpenChange={setIsCreateOpen} />}
       </AnimatePresence>
 
       <AnimatePresence>
         {isAuthOpen && (
           <AuthDialog
             onOpenChange={setIsAuthOpen}
-            onSuccess={() => refetchUser()}
+            onSuccess={() => {
+              refetchUser();
+              setIsAuthOpen(false);
+            }}
           />
         )}
       </AnimatePresence>
@@ -213,11 +513,13 @@ function HomePageContent() {
 
 export default function HomePage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-950">
+          <div className="inline-block h-10 w-10 animate-spin rounded-full border-4 border-white/30 border-t-transparent" />
+        </div>
+      }
+    >
       <HomePageContent />
     </Suspense>
   );

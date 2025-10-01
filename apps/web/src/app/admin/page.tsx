@@ -14,7 +14,9 @@ import {
   Shield,
   Eye,
   AlertCircle,
-  Home
+  Home,
+  Flame,
+  Pin
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -102,6 +104,14 @@ export default function AdminPage() {
     },
   });
 
+  const pinnedListingMutation = useMutation({
+    mutationFn: ({ id, isPinned }: { id: string; isPinned: boolean }) =>
+      api.setPinnedListing(id, isPinned),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['allListings'] });
+    },
+  });
+
   if (userLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -119,6 +129,7 @@ export default function AdminPage() {
 
   // Получить объявления требующие модерации из API
   const needsModeration = pendingListings?.items || [];
+  const currentPinnedListing = allListings?.find((listing: any) => listing.isPinned) || null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -329,6 +340,55 @@ export default function AdminPage() {
             <h2 className="text-2xl font-semibold mb-6">
               Все объявления ({allListings?.length || 0})
             </h2>
+            <div className="mb-6 rounded-2xl border border-amber-200/70 bg-amber-50/80 p-5 text-amber-800 shadow-sm">
+              {currentPinnedListing ? (
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-600/90">
+                      Закреплённое объявление
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-amber-900">
+                      {currentPinnedListing.title}
+                    </p>
+                    <p className="text-sm text-amber-700/90">
+                      Статус: {currentPinnedListing.status === 'approved' ? 'Одобрено' : currentPinnedListing.status}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open(`/?listing=${currentPinnedListing.id}`, '_blank')}
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      Открыть на сайте
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() =>
+                        pinnedListingMutation.mutate({ id: currentPinnedListing.id, isPinned: false })
+                      }
+                      disabled={pinnedListingMutation.isPending}
+                    >
+                      <XCircle className="w-4 h-4 mr-1" />
+                      Снять закрепление
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-600/90">
+                      Закреплённое объявление отсутствует
+                    </p>
+                    <p className="text-sm text-amber-700/90">
+                      Выберите объявление в таблице ниже и закрепите его, чтобы выделить в веб-приложении.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
             {listingsLoading ? (
               <div className="text-center py-12">
                 <div className="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
@@ -343,12 +403,16 @@ export default function AdminPage() {
                       <th className="text-left p-4">Статус</th>
                       <th className="text-left p-4">Цена</th>
                       <th className="text-left p-4">Дата</th>
+                      <th className="text-left p-4">Закрепление</th>
                       <th className="text-right p-4">Действия</th>
                     </tr>
                   </thead>
                   <tbody>
                     {allListings.map((listing: any) => (
-                      <tr key={listing.id} className="border-t hover:bg-muted/50">
+                      <tr
+                        key={listing.id}
+                        className={`border-t hover:bg-muted/50 ${listing.isPinned ? 'bg-amber-50/60' : ''}`}
+                      >
                         <td className="p-4">
                           <div className="flex items-center gap-3">
                             {listing.photos?.[0] && (
@@ -407,6 +471,28 @@ export default function AdminPage() {
                         </td>
                         <td className="p-4 text-sm text-muted-foreground">
                           {new Date(listing.createdAt).toLocaleDateString('ru-RU')}
+                        </td>
+                        <td className="p-4">
+                          {listing.isPinned ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                              <Flame className="w-3 h-3" />
+                              Закреплено
+                            </span>
+                          ) : listing.status !== 'approved' ? (
+                            <span className="text-xs text-muted-foreground">
+                              Доступно после одобрения
+                            </span>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => pinnedListingMutation.mutate({ id: listing.id, isPinned: true })}
+                              disabled={pinnedListingMutation.isPending || currentPinnedListing?.id === listing.id}
+                            >
+                              <Pin className="w-4 h-4 mr-1" />
+                              Закрепить
+                            </Button>
+                          )}
                         </td>
                         <td className="p-4">
                           <div className="flex justify-end gap-2">

@@ -51,6 +51,12 @@ export class ListingsController {
     return { categories, tags };
   }
 
+  @Get('pinned')
+  @ApiOperation({ summary: 'Get pinned listing' })
+  async getPinnedListing() {
+    return this.listingsService.getPinnedListing();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get listing details' })
   async getListing(@Param('id') id: string): Promise<any> {

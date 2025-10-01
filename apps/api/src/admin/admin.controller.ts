@@ -32,6 +32,16 @@ export class AdminController {
     return this.adminService.moderateListing(user.sub, id, data.status, data.reason);
   }
 
+  @Patch('listings/:id/pin')
+  @ApiOperation({ summary: 'Set listing pinned status' })
+  async setPinnedStatus(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() data: { isPinned: boolean },
+  ) {
+    return this.adminService.setPinnedStatus(user.sub, id, data.isPinned);
+  }
+
   @Post('broadcast')
   @ApiOperation({ summary: 'Send broadcast message to users' })
   async broadcast(

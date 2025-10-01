@@ -1,8 +1,32 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { prisma } from '@kavbot/database';
 
 @Injectable()
 export class AdminService {
+  private formatListing(listing: any) {
+    const {
+      tags: tagRelations = [],
+      user,
+      price,
+      _count,
+      commentCount,
+      ...rest
+    } = listing;
+
+    return {
+      ...rest,
+      price: price ? parseFloat(price.toString()) : null,
+      user: user
+        ? {
+            ...user,
+            tgUserId: user.tgUserId ? user.tgUserId.toString() : null,
+          }
+        : undefined,
+      tags: tagRelations.map((tagRelation: any) => tagRelation.tag ?? tagRelation),
+      commentCount: commentCount ?? _count?.comments ?? 0,
+    };
+  }
+
   async checkAdminRole(userId: string): Promise<any> {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user || (user.role !== 'admin' && user.role !== 'moderator')) {
@@ -79,6 +103,90 @@ export class AdminService {
     // TODO: Send notification to user via bot
 
     return updated;
+  }
+
+  async setPinnedStatus(userId: string, listingId: string, isPinned: boolean): Promise<any> {
+    await this.checkAdminRole(userId);
+
+    if (typeof isPinned !== 'boolean') {
+      throw new BadRequestException('Укажите статус закрепления');
+    }
+
+    const listing = await prisma.listing.findUnique({
+      where: { id: listingId },
+      include: {
+        category: true,
+        tags: {
+          include: {
+            tag: true,
+          },
+        },
+        photos: true,
+        user: {
+          select: {
+            id: true,
+            tgUserId: true,
+            username: true,
+            firstName: true,
+            phone: true,
+          },
+        },
+      },
+    });
+
+    if (!listing) {
+      throw new NotFoundException('Объявление не найдено');
+    }
+
+    const includeConfig = {
+      category: true,
+      tags: {
+        include: {
+          tag: true,
+        },
+      },
+      photos: true,
+      user: {
+        select: {
+          id: true,
+          tgUserId: true,
+          username: true,
+          firstName: true,
+          phone: true,
+        },
+      },
+    } as const;
+
+    if (isPinned) {
+      if (listing.status !== 'approved') {
+        throw new ForbiddenException('Закреплять можно только одобренные объявления');
+      }
+
+      const [, updated] = (await prisma.$transaction([
+        prisma.listing.updateMany({
+          where: {
+            isPinned: true,
+            id: { not: listingId },
+          } as any,
+          data: { isPinned: false, pinnedAt: null } as any,
+        }),
+        prisma.listing.update({
+          where: { id: listingId },
+          data: { isPinned: true, pinnedAt: new Date() } as any,
+          include: includeConfig,
+        }),
+      ])) as [any, any];
+
+      return this.formatListing(updated);
+    }
+
+    const updated = (await prisma.listing.update({
+      where: { id: listingId },
+      data: { isPinned: false, pinnedAt: null } as any,
+      include: includeConfig,
+    } as any)) as any;
+
+    return this.formatListing(updated);
   }
 
   async broadcastMessage(userId: string, _message: string, targetRole?: string) {
@@ -197,10 +305,9 @@ export class AdminService {
       },
     });
 
-    return listings.map((listing) => ({
+    return listings.map((listing) => this.formatListing({
       ...listing,
-      price: listing.price ? parseFloat(listing.price.toString()) : null,
-      tags: listing.tags.map((t) => t.tag),
+      _count: listing._count,
       commentCount: listing._count.comments,
     }));
   }

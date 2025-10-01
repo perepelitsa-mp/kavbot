@@ -35,6 +35,12 @@ export function ListingCard({ listing, onClick }: ListingCardProps) {
       )}
 
       <div className="p-4">
+        {listing.isPinned && (
+          <span className="mb-3 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            Закреплено
+          </span>
+        )}
         <div className="flex items-start justify-between mb-2">
           <h3 className="font-bold text-lg line-clamp-2">{listing.title}</h3>
           {listing.price && (

@@ -10,6 +10,33 @@ export type ListingsFeedResponse = {
 
 @Injectable()
 export class ListingsService {
+  private serializeListing(listing: any) {
+    const {
+      _count,
+      tags: tagRelations = [],
+      user,
+      price,
+      pinnedAt,
+      commentCount,
+      ...rest
+    } = listing;
+
+    const tags = tagRelations.map((tagRelation: any) => tagRelation.tag ?? tagRelation);
+
+    return {
+      ...rest,
+      price: price ? parseFloat(price.toString()) : null,
+      pinnedAt: pinnedAt ? pinnedAt.toISOString() : null,
+      user: user
+        ? {
+            ...user,
+            tgUserId: user.tgUserId ? user.tgUserId.toString() : null,
+          }
+        : undefined,
+      tags,
+      commentCount: commentCount ?? _count?.comments ?? 0,
+    };
+  }
   async getListings(query: {
     search?: string;
     category?: string;
@@ -100,16 +127,7 @@ export class ListingsService {
         : null;
 
     return {
-      items: items.map((listing) => ({
-        ...listing,
-        price: listing.price ? parseFloat(listing.price.toString()) : null,
-        user: {
-          ...listing.user,
-          tgUserId: listing.user.tgUserId ? listing.user.tgUserId.toString() : null,
-        },
-        tags: listing.tags.map((t) => t.tag),
-        commentCount: listing._count.comments,
-      })),
+      items: items.map((listing) => this.serializeListing(listing)),
       nextCursor,
       hasMore,
     };
@@ -159,14 +177,9 @@ export class ListingsService {
       throw new NotFoundException('Объявление не найдено');
     }
 
-    return {
+    return this.serializeListing({
       ...listing,
-      price: listing.price ? parseFloat(listing.price.toString()) : null,
-      user: {
-        ...listing.user,
-        tgUserId: listing.user.tgUserId ? listing.user.tgUserId.toString() : null,
-      },
-      tags: listing.tags.map((t) => t.tag),
+      _count: { comments: listing.comments.length },
       comments: listing.comments.map((comment) => ({
         ...comment,
         user: {
@@ -174,7 +187,42 @@ export class ListingsService {
           tgUserId: comment.user.tgUserId ? comment.user.tgUserId.toString() : null,
         },
       })),
-    };
+    });
+  }
+
+  async getPinnedListing(): Promise<any | null> {
+    const listing = (await prisma.listing.findFirst({
+      where: { status: 'approved', isPinned: true } as any,
+      include: {
+        user: {
+          select: {
+            id: true,
+            tgUserId: true,
+            username: true,
+            firstName: true,
+          },
+        },
+        category: true,
+        tags: {
+          include: {
+            tag: true,
+          },
+        },
+        photos: {
+          orderBy: { order: 'asc' },
+        },
+        _count: {
+          select: { comments: true },
+        },
+      },
+      orderBy: ([{ pinnedAt: 'desc' }, { publishedAt: 'desc' }] as any),
+    } as any)) as any;
+
+    if (!listing) {
+      return null;
+    }
+
+    return this.serializeListing(listing);
   }
 
   async createListing(userId: string, data: any): Promise<any> {
@@ -229,7 +277,7 @@ export class ListingsService {
       },
     });
 
-    return listing;
+    return this.serializeListing(listing);
   }
 
   async updateListing(listingId: string, userId: string, data: any): Promise<any> {
@@ -263,7 +311,7 @@ export class ListingsService {
       },
     });
 
-    return updated;
+    return this.serializeListing(updated);
   }
 
   async deleteListing(listingId: string, userId: string) {

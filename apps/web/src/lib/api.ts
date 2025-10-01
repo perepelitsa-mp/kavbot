@@ -74,6 +74,11 @@ export const api = {
     return data;
   },
 
+  async getPinnedListing() {
+    const { data } = await apiClient.get('/listings/pinned');
+    return data;
+  },
+
   async addComment(listingId: string, text: string, parentId?: string) {
     const { data } = await apiClient.post(`/listings/${listingId}/comments`, {
       text,
@@ -154,6 +159,11 @@ export const api = {
 
   async deleteListingAdmin(id: string) {
     const { data } = await apiClient.delete(`/admin/listings/${id}`);
+    return data;
+  },
+
+  async setPinnedListing(id: string, isPinned: boolean) {
+    const { data } = await apiClient.patch(`/admin/listings/${id}/pin`, { isPinned });
     return data;
   },
 };
