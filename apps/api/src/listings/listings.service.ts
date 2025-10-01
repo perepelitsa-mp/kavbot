@@ -40,6 +40,7 @@ export class ListingsService {
   async getListings(query: {
     search?: string;
     category?: string;
+    categories?: string[];
     tags?: string[];
     cursor?: string;
     limit?: number;
@@ -50,7 +51,15 @@ export class ListingsService {
       publishedAt: { not: null },
     };
 
-    if (query.category) {
+    // Поддержка как одной категории (обратная совместимость), так и множественных
+    if (query.categories && query.categories.length > 0) {
+      const categories = await prisma.category.findMany({
+        where: { slug: { in: query.categories } },
+      });
+      if (categories.length > 0) {
+        where.categoryId = { in: categories.map(c => c.id) };
+      }
+    } else if (query.category) {
       const category = await prisma.category.findUnique({
         where: { slug: query.category },
       });

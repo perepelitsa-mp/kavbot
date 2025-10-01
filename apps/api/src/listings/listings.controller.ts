@@ -28,6 +28,7 @@ export class ListingsController {
   async getListings(
     @Query('search') search?: string,
     @Query('category') category?: string,
+    @Query('categories') categories?: string,
     @Query('tags') tags?: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: number,
@@ -35,6 +36,7 @@ export class ListingsController {
     return this.listingsService.getListings({
       search,
       category,
+      categories: categories ? categories.split(',') : undefined,
       tags: tags ? tags.split(',') : undefined,
       cursor,
       limit,

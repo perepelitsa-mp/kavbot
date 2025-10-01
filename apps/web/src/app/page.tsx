@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useState, useEffect, useMemo, Suspense } from 'react';
@@ -28,7 +28,7 @@ function HomePageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('');
+  const [categories, setCategories] = useState<string[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -48,11 +48,6 @@ function HomePageContent() {
     }
   };
 
-  const toggleTag = (slug: string) => {
-    setTags((prev) =>
-      prev.includes(slug) ? prev.filter((tag) => tag !== slug) : [...prev, slug],
-    );
-  };
 
   const { data: currentUser, refetch: refetchUser } = useQuery({
     queryKey: ['currentUser'],
@@ -81,9 +76,23 @@ function HomePageContent() {
 
   const pinnedListing = pinnedListingData ?? null;
 
-  const categories = filtersData?.categories ?? [];
-  const popularTags = useMemo(() => filtersData?.tags?.slice(0, 6) ?? [], [filtersData]);
-  const spotlightCategories = useMemo(() => categories.slice(0, 3), [categories]);
+  const { data: featuredListingData } = useQuery({
+    queryKey: ['featuredListing'],
+    queryFn: () => api.getListings({ cursor: undefined }),
+    staleTime: 1000 * 60,
+    enabled: !pinnedListing,
+  });
+
+  const { data: totalListingsData } = useQuery({
+    queryKey: ['totalListings'],
+    queryFn: () => api.getListings({ cursor: undefined }),
+    staleTime: 1000 * 60,
+  });
+
+  const allCategories = filtersData?.categories ?? [];
+  const totalCategories = allCategories.length;
+  const totalTags = filtersData?.tags?.length ?? 0;
+  const totalListings = totalListingsData?.items?.length ?? 0;
 
   const {
     data,
@@ -92,11 +101,11 @@ function HomePageContent() {
     isFetchingNextPage,
     isLoading,
   } = useInfiniteQuery({
-    queryKey: ['listings', search, category, tags],
+    queryKey: ['listings', search, categories, tags],
     queryFn: ({ pageParam }) =>
       api.getListings({
         search,
-        category,
+        categories,
         tags,
         cursor: pageParam,
       }),
@@ -105,33 +114,37 @@ function HomePageContent() {
   });
 
   const listings = data?.pages.flatMap((page) => page.items) || [];
+  const featuredListing = pinnedListing ?? featuredListingData?.items?.[0] ?? null;
   const visibleListings = useMemo(
-    () => (pinnedListing ? listings.filter((listing) => listing.id !== pinnedListing.id) : listings),
-    [listings, pinnedListing?.id],
+    () => {
+      if (!featuredListing) return listings;
+      return listings.filter((listing) => listing.id !== featuredListing.id);
+    },
+    [listings, featuredListing?.id],
   );
-  const featuredListing = pinnedListing ?? listings[0];
-  const heroSectionLabel = pinnedListing ? 'Закреплённое объявление' : 'Рекомендуемое объявление';
-  const heroBadgeLabel = pinnedListing ? 'Платное размещение' : 'Популярное сейчас';
+  const heroSectionLabel = pinnedListing ? 'Закреплённое объявление' : 'Объявление дня';
+  const heroBadgeLabel = pinnedListing ? 'Проверено командой' : 'Новинка недели';
 
   const stats = useMemo(
     () => [
       {
-        label: 'Активных объявлений',
-        value: new Intl.NumberFormat('ru-RU').format(listings.length || 0),
+        label: 'Всего объявлений',
+        value: new Intl.NumberFormat('ru-RU').format(totalListings),
       },
       {
-        label: 'Категорий на выбор',
-        value: new Intl.NumberFormat('ru-RU').format(categories.length || 0),
+        label: 'Категорий на площадке',
+        value: new Intl.NumberFormat('ru-RU').format(totalCategories),
       },
       {
-        label: 'Популярных тегов',
-        value: new Intl.NumberFormat('ru-RU').format(popularTags.length || 0),
+        label: 'Доступных тегов',
+        value: new Intl.NumberFormat('ru-RU').format(totalTags),
       },
     ],
-    [categories.length, listings.length, popularTags.length],
+    [totalListings, totalCategories, totalTags],
   );
 
   return (
+
     <div className="relative isolate min-h-screen overflow-x-hidden bg-slate-950">
       <div
         className="pointer-events-none absolute inset-x-0 top-[-320px] -z-10 h-[720px] bg-gradient-to-b from-indigo-500/60 via-purple-500/30 to-transparent blur-3xl"
@@ -153,8 +166,8 @@ function HomePageContent() {
               <Sparkles className="h-5 w-5" />
             </span>
             <div>
-              <p className="text-lg font-semibold tracking-tight">KavMarket</p>
-              <p className="text-sm text-white/60">Городской маркетплейс Кавалерово</p>
+              <p className="text-lg font-semibold tracking-tight">KAVhub</p>
+              <p className="text-sm text-white/60">Онлайн-сердце Кавалерово</p>
             </div>
           </div>
 
@@ -167,18 +180,8 @@ function HomePageContent() {
                   className="border-white/20 bg-white/10 text-white transition hover:bg-white/20"
                 >
                   <User className="mr-2 h-4 w-4" />
-                  Профиль
+                  Личный кабинет
                 </Button>
-                <MotionButton
-                  layoutId="create-listing"
-                  onClick={() => setIsCreateOpen(true)}
-                  className="bg-gradient-to-r from-fuchsia-500 via-indigo-500 to-sky-500 text-white shadow-[0_20px_65px_-25px_rgba(79,70,229,0.85)] transition hover:shadow-[0_25px_70px_-20px_rgba(79,70,229,0.95)]"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.97 }}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Разместить объявление
-                </MotionButton>
               </>
             ) : (
               <>
@@ -190,16 +193,6 @@ function HomePageContent() {
                   <LogIn className="mr-2 h-4 w-4" />
                   Войти
                 </Button>
-                <MotionButton
-                  layoutId="create-listing"
-                  onClick={handleCreateClick}
-                  className="bg-gradient-to-r from-fuchsia-500 via-indigo-500 to-sky-500 text-white shadow-[0_20px_65px_-25px_rgba(79,70,229,0.85)] transition hover:shadow-[0_25px_70px_-20px_rgba(79,70,229,0.95)]"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.97 }}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Разместить объявление
-                </MotionButton>
               </>
             )}
           </div>
@@ -209,19 +202,19 @@ function HomePageContent() {
       <section className="relative z-20">
         <div className="container mx-auto px-4 pb-40 pt-6 text-white">
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: 'easeOut' }}
-            className="max-w-3xl"
+            className="max-w-3xl space-y-6"
           >
             <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-1 text-sm text-white/80 backdrop-blur">
               <Sparkles className="h-4 w-4 text-white" />
-              Добро пожаловать в городское комьюнити
+              Добро пожаловать в местное комьюнити
             </span>
-            <h1 className="mt-6 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
+            <h1 className="text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
               Находите и делитесь лучшими объявлениями в Кавалерово
             </h1>
-            <p className="mt-4 text-lg text-white/70 sm:text-xl">
+            <p className="text-lg text-white/70 sm:text-xl">
               Локальные услуги, работа, товары и события — всё, что важно вашему району, в одном месте.
             </p>
           </motion.div>
@@ -230,18 +223,8 @@ function HomePageContent() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1, duration: 0.6, ease: 'easeOut' }}
-            className="mt-10 flex flex-col gap-4 md:flex-row md:items-center"
+            className="mt-10"
           >
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-white/60" />
-              <Input
-                type="search"
-                placeholder="Что ищем сегодня? Например, репетитора или свежие вакансии"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-14 rounded-2xl border border-white/20 bg-white/10 pl-14 text-lg text-white placeholder:text-white/50 focus-visible:ring-white/40"
-              />
-            </div>
             <MotionButton
               layoutId="create-listing-hero"
               onClick={handleCreateClick}
@@ -250,68 +233,9 @@ function HomePageContent() {
               whileTap={{ scale: 0.97 }}
             >
               <Plus className="mr-2 h-5 w-5" />
-              Добавить объявление
+              Разместить объявление
             </MotionButton>
           </motion.div>
-
-          {spotlightCategories.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2, duration: 0.5 }}
-              className="mt-6 flex flex-wrap items-center gap-3"
-            >
-              {spotlightCategories.map((cat) => {
-                const isActive = category === cat.slug;
-                return (
-                  <motion.button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => setCategory(isActive ? '' : cat.slug)}
-                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition ${
-                      isActive
-                        ? 'border-white bg-white/20 text-white shadow-lg shadow-white/30'
-                        : 'border-white/15 bg-white/5 text-white/80 hover:border-white/30 hover:bg-white/10 hover:text-white'
-                    }`}
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.97 }}
-                  >
-                    <Flame className="h-4 w-4" />
-                    {cat.name}
-                  </motion.button>
-                );
-              })}
-            </motion.div>
-          )}
-
-          {popularTags.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.25, duration: 0.5 }}
-              className="mt-4 flex flex-wrap gap-2"
-            >
-              {popularTags.map((tag: any) => {
-                const active = tags.includes(tag.slug);
-                return (
-                  <motion.button
-                    key={tag.id}
-                    type="button"
-                    onClick={() => toggleTag(tag.slug)}
-                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition ${
-                      active
-                        ? 'border-white bg-white/20 text-white shadow-lg shadow-white/20'
-                        : 'border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:bg-white/10 hover:text-white'
-                    }`}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.97 }}
-                  >
-                    #{tag.name}
-                  </motion.button>
-                );
-              })}
-            </motion.div>
-          )}
 
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -363,19 +287,19 @@ function HomePageContent() {
                     onClick={() => setSelectedListingId(featuredListing.id)}
                     className="bg-white/90 text-slate-900 hover:bg-white"
                   >
-                    Подробнее
+                    Открыть объявление
                   </Button>
                   {featuredListing.category?.name && (
                     <button
                       type="button"
                       onClick={() => {
                         if (featuredListing.category?.slug) {
-                          setCategory(featuredListing.category.slug);
+                          setCategories([featuredListing.category.slug]);
                         }
                       }}
                       className="inline-flex items-center gap-1 text-sm text-white/70 transition hover:text-white"
                     >
-                      Смотреть категорию
+                      Перейти в категорию
                       <ArrowRight className="h-4 w-4" />
                     </button>
                   )}
@@ -404,19 +328,31 @@ function HomePageContent() {
 
       <main className="relative z-30 mt-[-140px] rounded-t-[48px] bg-background pb-20 text-slate-900 shadow-[0_-40px_90px_-50px_rgba(30,41,59,0.6)]">
         <div className="container mx-auto px-4">
-          <div className="relative -top-16">
-            <div className="rounded-3xl border border-slate-200/60 bg-white/80 p-6 shadow-2xl backdrop-blur">
-              <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="relative -top-16 z-40">
+            <div className="rounded-3xl border border-slate-200/60 bg-white/80 p-6 shadow-2xl backdrop-blur overflow-visible">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">Найдите то, что нужно</h2>
                   <p className="text-sm text-slate-500">
-                    Отфильтруйте объявления по категориям и тегам, чтобы увидеть самое актуальное
+                    Отфильтруйте объявления по категориям и тегам, чтобы быстрее найти нужное
                   </p>
+                </div>
+                <div className="w-full max-w-xl">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      type="search"
+                      placeholder="Что вы ищете? Например, iPhone 15 или ремонт квартиры"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="h-12 w-full rounded-2xl border border-slate-200 bg-white pl-12 text-base text-slate-700 placeholder:text-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-indigo-400"
+                    />
+                  </div>
                 </div>
               </div>
               <FilterBar
-                selectedCategory={category}
-                onCategoryChange={setCategory}
+                selectedCategories={categories}
+                onCategoriesChange={setCategories}
                 selectedTags={tags}
                 onTagsChange={setTags}
               />
@@ -436,9 +372,9 @@ function HomePageContent() {
         ) : visibleListings.length === 0 ? (
               <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/70 py-16 text-center shadow-inner">
                 <Sparkles className="h-10 w-10 text-slate-400" />
-                <p className="mt-4 text-lg font-medium text-slate-700">Пока ничего не найдено</p>
+                <p className="mt-4 text-lg font-medium text-slate-700">По запросу ничего не нашлось</p>
                 <p className="mt-1 max-w-md text-sm text-slate-500">
-                  Попробуйте изменить запрос или выберите другую категорию, чтобы увидеть больше объявлений.
+                  Попробуйте изменить фильтры или создайте новое объявление — возможно, именно его здесь ищут.
                 </p>
               </div>
             ) : (
@@ -474,7 +410,7 @@ function HomePageContent() {
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.96 }}
                     >
-                      {isFetchingNextPage ? 'Загружаем ещё...' : 'Показать больше объявлений'}
+                      {isFetchingNextPage ? 'Загружаем ещё…' : 'Показать ещё объявления'}
                     </MotionButton>
                   </div>
                 )}
@@ -524,3 +460,11 @@ export default function HomePage() {
     </Suspense>
   );
 }
+
+
+
+
+
+
+
+

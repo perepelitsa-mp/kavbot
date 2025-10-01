@@ -57,12 +57,14 @@ export const api = {
   async getListings(params: {
     search?: string;
     category?: string;
+    categories?: string[];
     tags?: string[];
     cursor?: string;
   }) {
     const { data } = await apiClient.get('/listings', {
       params: {
         ...params,
+        categories: params.categories?.join(','),
         tags: params.tags?.join(','),
       },
     });
