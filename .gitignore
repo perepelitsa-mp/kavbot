@@ -1,0 +1,47 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build outputs
+dist
+build
+.next
+out
+.turbo
+
+# Testing
+coverage
+*.log
+
+# Environment
+.env
+.env*.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+.Python
+venv
+.venv
+*.egg-info
+
+# Database
+*.db
+*.sqlite
+
+# Misc
+.cache
+.temp
+tmp

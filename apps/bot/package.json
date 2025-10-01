@@ -1,0 +1,27 @@
+{
+  "name": "@kavbot/bot",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@kavbot/shared": "workspace:*",
+    "grammy": "^1.19.2",
+    "@grammyjs/router": "^2.0.0",
+    "@grammyjs/ratelimiter": "^1.2.0",
+    "axios": "^1.6.2",
+    "ioredis": "^5.3.2",
+    "pino": "^8.17.2",
+    "pino-pretty": "^10.3.1",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

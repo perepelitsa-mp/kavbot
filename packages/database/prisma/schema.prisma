@@ -1,0 +1,255 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+enum UserRole {
+  user
+  moderator
+  admin
+}
+
+enum SourceType {
+  telegram
+  rss
+  site
+}
+
+enum DocumentType {
+  news
+  event
+  outage
+  post
+  other
+}
+
+enum EventType {
+  event
+  outage
+  notice
+  training
+}
+
+enum ListingStatus {
+  pending
+  approved
+  rejected
+  archived
+}
+
+model User {
+  id         String   @id @default(uuid())
+  tgUserId   BigInt?  @unique @map("tg_user_id")
+  phone      String?  @unique
+  password   String?
+  username   String?
+  firstName  String?  @map("first_name")
+  lastName   String?  @map("last_name")
+  role       UserRole @default(user)
+  isBanned   Boolean  @default(false) @map("is_banned")
+  settings   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  listings   Listing[]
+  comments   Comment[]
+
+  @@index([tgUserId])
+  @@index([phone])
+  @@map("users")
+}
+
+model Source {
+  id            String     @id @default(uuid())
+  type          SourceType
+  handleOrUrl   String     @map("handle_or_url")
+  title         String
+  isActive      Boolean    @default(true) @map("is_active")
+  lastFetchedAt DateTime?  @map("last_fetched_at")
+  meta          Json?
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  documents     Document[]
+  ingestState   IngestState?
+
+  @@unique([type, handleOrUrl])
+  @@index([isActive])
+  @@map("sources")
+}
+
+model Document {
+  id          String       @id @default(uuid())
+  sourceId    String       @map("source_id")
+  docType     DocumentType @map("doc_type")
+  title       String
+  text        String       @db.Text
+  url         String?
+  publishedAt DateTime?    @map("published_at")
+  location    Json?
+  // pgvector embedding - use Unsupported type for now
+  embedding   Unsupported("vector(768)")?
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  source      Source       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  events      Event[]
+
+  @@index([sourceId])
+  @@index([docType])
+  @@index([publishedAt(sort: Desc)])
+  // Full-text search index
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin)
+  // Vector similarity index (will be created via raw SQL migration)
+  @@map("documents")
+}
+
+model Event {
+  id         String    @id @default(uuid())
+  docId      String    @map("doc_id")
+  eventType  EventType @map("event_type")
+  startsAt   DateTime? @map("starts_at")
+  endsAt     DateTime? @map("ends_at")
+  place      String?
+  contacts   Json?
+
+  document   Document  @relation(fields: [docId], references: [id], onDelete: Cascade)
+
+  @@index([docId])
+  @@index([eventType])
+  @@index([startsAt])
+  @@map("events")
+}
+
+model Place {
+  id        String   @id @default(uuid())
+  name      String
+  category  String
+  address   String?
+  geo       Json?
+  contacts  Json?
+  schedule  Json?
+  meta      Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@map("places")
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  slug      String    @unique
+  name      String
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  listings  Listing[]
+
+  @@map("categories")
+}
+
+model Tag {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  listings  ListingTag[]
+
+  @@map("tags")
+}
+
+model Listing {
+  id          String        @id @default(uuid())
+  userId      String        @map("user_id")
+  title       String
+  description String        @db.Text
+  categoryId  String        @map("category_id")
+  price       Decimal?      @db.Decimal(10, 2)
+  status      ListingStatus @default(pending)
+  publishedAt DateTime?     @map("published_at")
+  moderatedAt DateTime?     @map("moderated_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  // pgvector embedding
+  embedding   Unsupported("vector(768)")?
+  contacts   Json?
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category    Category      @relation(fields: [categoryId], references: [id])
+  tags        ListingTag[]
+  photos      ListingPhoto[]
+  comments    Comment[]
+
+  @@index([userId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([publishedAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  // Full-text search
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("listings")
+}
+
+model ListingTag {
+  listingId String  @map("listing_id")
+  tagId     String  @map("tag_id")
+
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([listingId, tagId])
+  @@index([tagId])
+  @@map("listing_tags")
+}
+
+model ListingPhoto {
+  id        String   @id @default(uuid())
+  listingId String   @map("listing_id")
+  s3Key     String   @map("s3_key")
+  width     Int
+  height    Int
+  order     Int
+  createdAt DateTime @default(now()) @map("created_at")
+
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId])
+  @@map("listing_photos")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  listingId String   @map("listing_id")
+  userId    String   @map("user_id")
+  parentId  String?  @map("parent_id")
+  text      String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([listingId])
+  @@index([userId])
+  @@index([parentId])
+  @@map("comments")
+}
+
+model IngestState {
+  sourceId   String   @id @map("source_id")
+  lastItemId String?  @map("last_item_id")
+  lastHash   String?  @map("last_hash")
+  cursor     String?
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  source     Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@map("ingest_state")
+}
