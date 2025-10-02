@@ -39,6 +39,10 @@ export default function AdminPage() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [selectedListing, setSelectedListing] = useState<any>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmAction | null>(null);
+  const [pinDialogOpen, setPinDialogOpen] = useState(false);
+  const [pinDialogListingId, setPinDialogListingId] = useState<string | null>(null);
+  const [pinStartsAt, setPinStartsAt] = useState('');
+  const [pinEndsAt, setPinEndsAt] = useState('');
 
   const { data: currentUser, isLoading: userLoading } = useQuery({
     queryKey: ['currentUser'],
@@ -105,10 +109,23 @@ export default function AdminPage() {
   });
 
   const pinnedListingMutation = useMutation({
-    mutationFn: ({ id, isPinned }: { id: string; isPinned: boolean }) =>
-      api.setPinnedListing(id, isPinned),
+    mutationFn: ({
+      id,
+      isPinned,
+      pinStartsAt,
+      pinEndsAt,
+    }: {
+      id: string;
+      isPinned: boolean;
+      pinStartsAt?: string;
+      pinEndsAt?: string;
+    }) => api.setPinnedListing(id, isPinned, pinStartsAt, pinEndsAt),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['allListings'] });
+      queryClient.invalidateQueries({ queryKey: ['pinnedListing'] });
+      setPinDialogOpen(false);
+      setPinStartsAt('');
+      setPinEndsAt('');
     },
   });
 
@@ -353,6 +370,20 @@ export default function AdminPage() {
                     <p className="text-sm text-amber-700/90">
                       Статус: {currentPinnedListing.status === 'approved' ? 'Одобрено' : currentPinnedListing.status}
                     </p>
+                    {(currentPinnedListing.pinStartsAt || currentPinnedListing.pinEndsAt) && (
+                      <div className="mt-2 text-xs text-amber-600/90">
+                        {currentPinnedListing.pinStartsAt && (
+                          <div>
+                            Начало: {new Date(currentPinnedListing.pinStartsAt).toLocaleString('ru-RU')}
+                          </div>
+                        )}
+                        {currentPinnedListing.pinEndsAt && (
+                          <div>
+                            Окончание: {new Date(currentPinnedListing.pinEndsAt).toLocaleString('ru-RU')}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
@@ -486,7 +517,10 @@ export default function AdminPage() {
                             <Button
                               size="sm"
                               variant="secondary"
-                              onClick={() => pinnedListingMutation.mutate({ id: listing.id, isPinned: true })}
+                              onClick={() => {
+                                setPinDialogListingId(listing.id);
+                                setPinDialogOpen(true);
+                              }}
                               disabled={pinnedListingMutation.isPending || currentPinnedListing?.id === listing.id}
                             >
                               <Pin className="w-4 h-4 mr-1" />
@@ -745,6 +779,77 @@ export default function AdminPage() {
         confirmText={confirmDialog?.confirmText}
         variant={confirmDialog?.variant}
       />
+
+      {/* Pin Listing Dialog */}
+      {pinDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <h3 className="text-xl font-semibold mb-4">Закрепить объявление</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Укажите время начала и окончания закрепления (опционально). Если оставить пустым,
+              объявление будет закреплено без ограничения по времени.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Начало закрепления
+                </label>
+                <input
+                  type="datetime-local"
+                  value={pinStartsAt}
+                  onChange={(e) => setPinStartsAt(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Оставьте пустым для немедленного закрепления"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Окончание закрепления
+                </label>
+                <input
+                  type="datetime-local"
+                  value={pinEndsAt}
+                  onChange={(e) => setPinEndsAt(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Оставьте пустым для бессрочного закрепления"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setPinDialogOpen(false);
+                  setPinStartsAt('');
+                  setPinEndsAt('');
+                }}
+              >
+                Отмена
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  if (pinDialogListingId) {
+                    pinnedListingMutation.mutate({
+                      id: pinDialogListingId,
+                      isPinned: true,
+                      pinStartsAt: pinStartsAt || undefined,
+                      pinEndsAt: pinEndsAt || undefined,
+                    });
+                  }
+                }}
+                disabled={pinnedListingMutation.isPending}
+              >
+                {pinnedListingMutation.isPending ? 'Закрепление...' : 'Закрепить'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

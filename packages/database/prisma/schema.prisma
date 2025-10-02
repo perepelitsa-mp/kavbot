@@ -178,6 +178,8 @@ model Listing {
   moderatedAt DateTime?     @map("moderated_at")
   isPinned    Boolean       @default(false) @map("is_pinned")
   pinnedAt    DateTime?     @map("pinned_at")
+  pinStartsAt DateTime?     @map("pin_starts_at")
+  pinEndsAt   DateTime?     @map("pin_ends_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
   createdAt   DateTime      @default(now()) @map("created_at")
   // pgvector embedding

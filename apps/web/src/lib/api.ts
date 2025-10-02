@@ -164,8 +164,12 @@ export const api = {
     return data;
   },
 
-  async setPinnedListing(id: string, isPinned: boolean) {
-    const { data } = await apiClient.patch(`/admin/listings/${id}/pin`, { isPinned });
+  async setPinnedListing(id: string, isPinned: boolean, pinStartsAt?: string, pinEndsAt?: string) {
+    const { data } = await apiClient.patch(`/admin/listings/${id}/pin`, {
+      isPinned,
+      pinStartsAt,
+      pinEndsAt,
+    });
     return data;
   },
 };

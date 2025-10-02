@@ -37,9 +37,9 @@ export class AdminController {
   async setPinnedStatus(
     @CurrentUser() user: any,
     @Param('id') id: string,
-    @Body() data: { isPinned: boolean },
+    @Body() data: { isPinned: boolean; pinStartsAt?: string; pinEndsAt?: string },
   ) {
-    return this.adminService.setPinnedStatus(user.sub, id, data.isPinned);
+    return this.adminService.setPinnedStatus(user.sub, id, data.isPinned, data.pinStartsAt, data.pinEndsAt);
   }
 
   @Post('broadcast')

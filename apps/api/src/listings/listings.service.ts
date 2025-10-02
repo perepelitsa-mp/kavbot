@@ -17,6 +17,8 @@ export class ListingsService {
       user,
       price,
       pinnedAt,
+      pinStartsAt,
+      pinEndsAt,
       commentCount,
       ...rest
     } = listing;
@@ -27,6 +29,8 @@ export class ListingsService {
       ...rest,
       price: price ? parseFloat(price.toString()) : null,
       pinnedAt: pinnedAt ? pinnedAt.toISOString() : null,
+      pinStartsAt: pinStartsAt ? pinStartsAt.toISOString() : null,
+      pinEndsAt: pinEndsAt ? pinEndsAt.toISOString() : null,
       user: user
         ? {
             ...user,
@@ -200,8 +204,43 @@ export class ListingsService {
   }
 
   async getPinnedListing(): Promise<any | null> {
+    const now = new Date();
+
     const listing = (await prisma.listing.findFirst({
-      where: { status: 'approved', isPinned: true } as any,
+      where: {
+        status: 'approved',
+        isPinned: true,
+        OR: [
+          // Нет временных ограничений - всегда закреплено
+          {
+            AND: [
+              { pinStartsAt: null },
+              { pinEndsAt: null }
+            ]
+          },
+          // Есть только начало, еще не началось или уже началось
+          {
+            AND: [
+              { pinStartsAt: { lte: now } },
+              { pinEndsAt: null }
+            ]
+          },
+          // Есть только конец, еще не закончилось
+          {
+            AND: [
+              { pinStartsAt: null },
+              { pinEndsAt: { gte: now } }
+            ]
+          },
+          // Есть и начало и конец, находится в диапазоне
+          {
+            AND: [
+              { pinStartsAt: { lte: now } },
+              { pinEndsAt: { gte: now } }
+            ]
+          }
+        ]
+      } as any,
       include: {
         user: {
           select: {

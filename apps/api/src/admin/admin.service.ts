@@ -8,6 +8,9 @@ export class AdminService {
       tags: tagRelations = [],
       user,
       price,
+      pinnedAt,
+      pinStartsAt,
+      pinEndsAt,
       _count,
       commentCount,
       ...rest
@@ -16,6 +19,9 @@ export class AdminService {
     return {
       ...rest,
       price: price ? parseFloat(price.toString()) : null,
+      pinnedAt: pinnedAt ? pinnedAt.toISOString() : null,
+      pinStartsAt: pinStartsAt ? pinStartsAt.toISOString() : null,
+      pinEndsAt: pinEndsAt ? pinEndsAt.toISOString() : null,
       user: user
         ? {
             ...user,
@@ -105,7 +111,13 @@ export class AdminService {
     return updated;
   }
 
-  async setPinnedStatus(userId: string, listingId: string, isPinned: boolean): Promise<any> {
+  async setPinnedStatus(
+    userId: string,
+    listingId: string,
+    isPinned: boolean,
+    pinStartsAt?: string,
+    pinEndsAt?: string
+  ): Promise<any> {
     await this.checkAdminRole(userId);
 
     if (typeof isPinned !== 'boolean') {
@@ -168,11 +180,16 @@ export class AdminService {
             isPinned: true,
             id: { not: listingId },
           } as any,
-          data: { isPinned: false, pinnedAt: null } as any,
+          data: { isPinned: false, pinnedAt: null, pinStartsAt: null, pinEndsAt: null } as any,
         }),
         prisma.listing.update({
           where: { id: listingId },
-          data: { isPinned: true, pinnedAt: new Date() } as any,
+          data: {
+            isPinned: true,
+            pinnedAt: new Date(),
+            pinStartsAt: pinStartsAt ? new Date(pinStartsAt) : null,
+            pinEndsAt: pinEndsAt ? new Date(pinEndsAt) : null,
+          } as any,
           include: includeConfig,
         }),
       ])) as [any, any];
@@ -182,7 +199,7 @@ export class AdminService {
 
     const updated = (await prisma.listing.update({
       where: { id: listingId },
-      data: { isPinned: false, pinnedAt: null } as any,
+      data: { isPinned: false, pinnedAt: null, pinStartsAt: null, pinEndsAt: null } as any,
       include: includeConfig,
     } as any)) as any;
 
