@@ -6,6 +6,7 @@ export type ListingsFeedResponse = {
   items: any[];
   nextCursor: string | null;
   hasMore: boolean;
+  total: number;
 };
 
 @Injectable()
@@ -101,35 +102,38 @@ export class ListingsService {
       }
     }
 
-    const listings = await prisma.listing.findMany({
-      where: { ...where, ...cursorCondition },
-      include: {
-        user: {
-          select: {
-            id: true,
-            tgUserId: true,
-            username: true,
-            firstName: true,
+    const [listings, total] = await Promise.all([
+      prisma.listing.findMany({
+        where: { ...where, ...cursorCondition },
+        include: {
+          user: {
+            select: {
+              id: true,
+              tgUserId: true,
+              username: true,
+              firstName: true,
+            },
+          },
+          category: true,
+          tags: {
+            include: {
+              tag: true,
+            },
+          },
+          photos: {
+            orderBy: { order: 'asc' },
+          },
+          _count: {
+            select: { comments: true },
           },
         },
-        category: true,
-        tags: {
-          include: {
-            tag: true,
-          },
+        orderBy: {
+          publishedAt: 'desc',
         },
-        photos: {
-          orderBy: { order: 'asc' },
-        },
-        _count: {
-          select: { comments: true },
-        },
-      },
-      orderBy: {
-        publishedAt: 'desc',
-      },
-      take: limit + 1,
-    });
+        take: limit + 1,
+      }),
+      prisma.listing.count({ where }),
+    ]);
 
     const hasMore = listings.length > limit;
     const items = hasMore ? listings.slice(0, limit) : listings;
@@ -143,6 +147,7 @@ export class ListingsService {
       items: items.map((listing) => this.serializeListing(listing)),
       nextCursor,
       hasMore,
+      total,
     };
   }
 
@@ -168,7 +173,6 @@ export class ListingsService {
           orderBy: { order: 'asc' },
         },
         comments: {
-          where: { parentId: null },
           include: {
             user: {
               select: {
@@ -176,6 +180,7 @@ export class ListingsService {
                 tgUserId: true,
                 username: true,
                 firstName: true,
+                lastName: true,
               },
             },
           },
@@ -190,23 +195,68 @@ export class ListingsService {
       throw new NotFoundException('Объявление не найдено');
     }
 
+    // Organize comments into parent-child structure recursively
+    const allComments = listing.comments.map((comment) => ({
+      ...comment,
+      user: {
+        ...comment.user,
+        tgUserId: comment.user.tgUserId ? comment.user.tgUserId.toString() : null,
+      },
+      replies: [] as any[],
+      parentUser: null as { id: string; firstName: string; lastName: string } | null,
+    }));
+
+    // Build nested structure with Map for O(1) lookups
+    const commentsMap = new Map();
+    const rootComments: any[] = [];
+
+    // First pass: create map of all comments
+    allComments.forEach((comment) => {
+      commentsMap.set(comment.id, comment);
+    });
+
+    // Second pass: build tree structure
+    allComments.forEach((comment) => {
+      if (comment.parentId) {
+        const parent = commentsMap.get(comment.parentId);
+        if (parent) {
+          // Add parent user info to reply
+          comment.parentUser = {
+            id: parent.user.id,
+            firstName: parent.user.firstName,
+            lastName: parent.user.lastName,
+          };
+          // Add comment to parent's replies array
+          if (!parent.replies) {
+            parent.replies = [];
+          }
+          parent.replies.push(comment);
+        } else {
+          // If parent not found, treat as root comment
+          rootComments.push(comment);
+        }
+      } else {
+        // Root level comment
+        rootComments.push(comment);
+      }
+    });
+
     return this.serializeListing({
       ...listing,
-      _count: { comments: listing.comments.length },
-      comments: listing.comments.map((comment) => ({
-        ...comment,
-        user: {
-          ...comment.user,
-          tgUserId: comment.user.tgUserId ? comment.user.tgUserId.toString() : null,
-        },
-      })),
+      _count: { comments: rootComments.length },
+      comments: rootComments,
     });
   }
 
   async getPinnedListing(): Promise<any | null> {
+    const listings = await this.getPinnedListings();
+    return listings.length > 0 ? listings[0] : null;
+  }
+
+  async getPinnedListings(): Promise<any[]> {
     const now = new Date();
 
-    const listing = (await prisma.listing.findFirst({
+    const listings = (await prisma.listing.findMany({
       where: {
         status: 'approved',
         isPinned: true,
@@ -264,13 +314,10 @@ export class ListingsService {
         },
       },
       orderBy: ([{ pinnedAt: 'desc' }, { publishedAt: 'desc' }] as any),
-    } as any)) as any;
+      take: 3,
+    } as any)) as any[];
 
-    if (!listing) {
-      return null;
-    }
-
-    return this.serializeListing(listing);
+    return listings.map(listing => this.serializeListing(listing));
   }
 
   async createListing(userId: string, data: any): Promise<any> {
@@ -288,6 +335,11 @@ export class ListingsService {
     );
     const uniqueTagIds = Array.from(new Set(tagIds));
 
+    // Determine status: draft by default, or approved if publish is requested
+    // TODO: Change to 'pending' when moderation is ready
+    const status = data.publish ? 'approved' : 'draft';
+    const publishedAt = data.publish ? new Date() : null;
+
     const listing = await prisma.listing.create({
       data: {
         userId,
@@ -296,8 +348,8 @@ export class ListingsService {
         categoryId: data.categoryId,
         price: data.price ?? null,
         contacts: data.contacts,
-        status: 'approved',
-        publishedAt: new Date(),
+        status,
+        publishedAt,
         tags: {
           create: uniqueTagIds.map((tagId) => ({
             tagId,
@@ -341,12 +393,83 @@ export class ListingsService {
       throw new ForbiddenException('Вы можете редактировать только свои объявления');
     }
 
+    // Process tags if provided
+    let tagIds: string[] | undefined;
+    if (data.tags) {
+      tagIds = await Promise.all(
+        data.tags.map(async (tagName: string) => {
+          const slug = slugify(tagName);
+          const tag = await prisma.tag.upsert({
+            where: { slug },
+            create: { slug, name: tagName },
+            update: {},
+          });
+          return tag.id;
+        }),
+      );
+    }
+
+    // Delete existing tags if updating
+    if (tagIds) {
+      await prisma.listingTag.deleteMany({
+        where: { listingId },
+      });
+    }
+
+    // Delete existing photos if updating
+    if (data.photos) {
+      await prisma.listingPhoto.deleteMany({
+        where: { listingId },
+      });
+    }
+
+    // Handle status changes
+    let statusUpdate = {};
+    if (data.publish !== undefined) {
+      if (data.publish) {
+        // Publish immediately if currently draft/rejected
+        // TODO: Change to 'pending' when moderation is ready
+        if (listing.status === 'draft' || listing.status === 'rejected') {
+          statusUpdate = {
+            status: 'approved',
+            publishedAt: new Date(),
+          };
+        }
+      } else {
+        // Move to draft
+        statusUpdate = {
+          status: 'draft',
+          publishedAt: null,
+        };
+      }
+    }
+
     const updated = await prisma.listing.update({
       where: { id: listingId },
       data: {
         title: data.title,
         description: data.description,
         price: data.price,
+        categoryId: data.categoryId,
+        contacts: data.contacts,
+        ...statusUpdate,
+        ...(tagIds && {
+          tags: {
+            create: tagIds.map((tagId) => ({
+              tag: { connect: { id: tagId } },
+            })),
+          },
+        }),
+        ...(data.photos && {
+          photos: {
+            create: data.photos.map((photo: any, index: number) => ({
+              s3Key: photo.s3Key,
+              width: photo.width,
+              height: photo.height,
+              order: index,
+            })),
+          },
+        }),
       },
       include: {
         category: true,
@@ -355,7 +478,17 @@ export class ListingsService {
             tag: true,
           },
         },
-        photos: true,
+        photos: {
+          orderBy: { order: 'asc' },
+        },
+        user: {
+          select: {
+            id: true,
+            tgUserId: true,
+            username: true,
+            firstName: true,
+          },
+        },
       },
     });
 
@@ -457,6 +590,10 @@ export class ListingsService {
       ...tag,
       count: tag._count.listings,
     }));
+  }
+
+  async getTotalUsers() {
+    return prisma.user.count();
   }
 
   async getUserListings(userId: string): Promise<any> {

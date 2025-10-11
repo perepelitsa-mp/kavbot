@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createListingSchema, type CreateListingInput } from '@kavbot/shared';
@@ -23,7 +23,8 @@ type UploadedPhoto = {
   height?: number;
 };
 
-interface CreateListingDialogProps {
+interface EditListingDialogProps {
+  listing: any;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -35,15 +36,29 @@ const defaultContacts: CreateListingInput['contacts'] = {
   whatsapp: '',
 };
 
-const getDefaultValues = (): CreateListingInput => ({
-  title: '',
-  description: '',
-  categoryId: '',
-  tags: [],
-  price: undefined,
-  photos: [],
-  contacts: { ...defaultContacts },
-});
+const getDefaultValues = (listing?: any): CreateListingInput => {
+  if (!listing) {
+    return {
+      title: '',
+      description: '',
+      categoryId: '',
+      tags: [],
+      price: undefined,
+      photos: [],
+      contacts: { ...defaultContacts },
+    };
+  }
+
+  return {
+    title: listing.title || '',
+    description: listing.description || '',
+    categoryId: listing.categoryId || '',
+    tags: listing.tags?.map((t: any) => t.name || t.tag?.name) || [],
+    price: listing.price || undefined,
+    photos: [],
+    contacts: listing.contacts || { ...defaultContacts },
+  };
+};
 
 
 
@@ -66,7 +81,7 @@ const readImageDimensions = (file: File) =>
     image.src = url;
   });
 
-export function CreateListingDialog({ onOpenChange }: CreateListingDialogProps) {
+export function EditListingDialog({ listing, onOpenChange }: EditListingDialogProps) {
   const queryClient = useQueryClient();
   const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -87,11 +102,27 @@ export function CreateListingDialog({ onOpenChange }: CreateListingDialogProps) 
     reset,
   } = useForm<CreateListingInput>({
     resolver: zodResolver(createListingSchema),
-    defaultValues: getDefaultValues(),
+    defaultValues: getDefaultValues(listing),
   });
 
   const selectedTags = watch('tags') ?? [];
   const selectedCategoryId = watch('categoryId');
+
+  // Load existing photos
+  useEffect(() => {
+    if (listing?.photos && listing.photos.length > 0) {
+      const loadedPhotos: UploadedPhoto[] = listing.photos.map((photo: any) => ({
+        id: photo.id,
+        fileName: photo.s3Key,
+        previewUrl: `/api/photos/${photo.s3Key}`,
+        status: 'uploaded' as const,
+        s3Key: photo.s3Key,
+        width: photo.width,
+        height: photo.height,
+      }));
+      setPhotos(loadedPhotos);
+    }
+  }, [listing]);
 
   const categories = filters?.categories ?? [];
   const popularTags = filters?.tags ?? [];
@@ -130,8 +161,8 @@ export function CreateListingDialog({ onOpenChange }: CreateListingDialogProps) 
   };
 
 
-  const createMutation = useMutation({
-    mutationFn: api.createListing,
+  const updateMutation = useMutation({
+    mutationFn: (data: any) => api.updateListing(listing.id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listings'] });
       queryClient.invalidateQueries({ queryKey: ['myListings'] });
@@ -239,7 +270,7 @@ export function CreateListingDialog({ onOpenChange }: CreateListingDialogProps) 
     );
   };
 
-  const handleSubmitWithStatus = async (values: CreateListingInput, publish: boolean) => {
+  const handleSubmitWithStatus = async (values: CreateListingInput, publish: boolean | undefined) => {
     if (isUploadingPhotos) {
       setSubmitError('Дождитесь завершения загрузки фотографий.');
       return;
@@ -251,30 +282,34 @@ export function CreateListingDialog({ onOpenChange }: CreateListingDialogProps) 
       price:
         typeof values.price === 'number' && !Number.isNaN(values.price) ? values.price : undefined,
       photos: uploadedPhotos,
-      publish,
     };
+
+    // Only add publish field if it's defined (to change status)
+    if (publish !== undefined) {
+      payload.publish = publish;
+    }
 
     try {
       setSubmitError(null);
-      await createMutation.mutateAsync(payload);
+      await updateMutation.mutateAsync(payload);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         if (error.response?.status === 401) {
-          setSubmitError('Авторизуйтесь, чтобы публиковать объявления.');
+          setSubmitError('Авторизуйтесь, чтобы редактировать объявления.');
           return;
         }
 
-        setSubmitError(error.response?.data?.message ?? 'Не удалось создать объявление. Попробуйте ещё раз.');
+        setSubmitError(error.response?.data?.message ?? 'Не удалось обновить объявление. Попробуйте ещё раз.');
         return;
       }
 
-      setSubmitError('Не удалось создать объявление. Попробуйте ещё раз.');
+      setSubmitError('Не удалось обновить объявление. Попробуйте ещё раз.');
     }
   };
 
-  const onSubmit = (values: CreateListingInput) => handleSubmitWithStatus(values, true);
+  const onSubmit = (values: CreateListingInput) => handleSubmitWithStatus(values, undefined);
 
-  const footerDisabled = createMutation.isPending || isUploadingPhotos;
+  const footerDisabled = updateMutation.isPending || isUploadingPhotos;
 
   return (
     <motion.div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -301,9 +336,9 @@ export function CreateListingDialog({ onOpenChange }: CreateListingDialogProps) 
           <div className="rounded-[26px] bg-white text-slate-700">
             <div className="flex items-start justify-between border-b border-slate-200 px-8 py-6">
               <div>
-                <h2 className="text-3xl font-semibold tracking-tight">Создать объявление</h2>
+                <h2 className="text-3xl font-semibold tracking-tight">Редактировать объявление</h2>
                 <p className="mt-2 text-sm text-slate-500">
-                  Добавьте фотографии, заполните описание и контакты, чтобы пользователи быстро связались с вами.
+                  Обновите фотографии, описание и контакты вашего объявления.
                 </p>
               </div>
               <Button variant="ghost" size="icon" onClick={() => handleClose()}>
@@ -576,32 +611,70 @@ export function CreateListingDialog({ onOpenChange }: CreateListingDialogProps) 
                   >
                     Отмена
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={footerDisabled}
-                    className="gap-2 text-base"
-                    onClick={handleSubmit((values) => handleSubmitWithStatus(values, false))}
-                  >
-                    {createMutation.isPending ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Сохранение...
-                      </>
-                    ) : (
-                      'Сохранить как черновик'
-                    )}
-                  </Button>
-                  <Button type="submit" disabled={footerDisabled} className="gap-2 text-base">
-                    {createMutation.isPending ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Отправка...
-                      </>
-                    ) : (
-                      'Отправить на модерацию'
-                    )}
-                  </Button>
+                  {(listing.status === 'draft' || listing.status === 'rejected') ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={footerDisabled}
+                        className="gap-2 text-base"
+                        onClick={handleSubmit((values) => handleSubmitWithStatus(values, false))}
+                      >
+                        {updateMutation.isPending ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Сохранение...
+                          </>
+                        ) : (
+                          'Сохранить как черновик'
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        disabled={footerDisabled}
+                        className="gap-2 text-base"
+                        onClick={handleSubmit((values) => handleSubmitWithStatus(values, true))}
+                      >
+                        {updateMutation.isPending ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Отправка...
+                          </>
+                        ) : (
+                          'Отправить на модерацию'
+                        )}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={footerDisabled}
+                        className="gap-2 text-base"
+                        onClick={handleSubmit((values) => handleSubmitWithStatus(values, false))}
+                      >
+                        {updateMutation.isPending ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Перемещение...
+                          </>
+                        ) : (
+                          'Переместить в черновик'
+                        )}
+                      </Button>
+                      <Button type="submit" disabled={footerDisabled} className="gap-2 text-base">
+                        {updateMutation.isPending ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Сохранение...
+                          </>
+                        ) : (
+                          'Сохранить изменения'
+                        )}
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             </form>

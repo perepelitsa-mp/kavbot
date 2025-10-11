@@ -7,12 +7,13 @@ import { AuthModule } from './auth/auth.module';
 import { ListingsModule } from './listings/listings.module';
 import { SearchModule } from './search/search.module';
 import { AdminModule } from './admin/admin.module';
-import { HealthController } from './common/health.controller';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: ['.env', '../../.env'],
     }),
     LoggerModule.forRoot({
       pinoHttp: {
@@ -49,8 +50,8 @@ import { HealthController } from './common/health.controller';
     ListingsModule,
     SearchModule,
     AdminModule,
+    HealthModule,
   ],
-  controllers: [HealthController],
   providers: [
     {
       provide: APP_GUARD,

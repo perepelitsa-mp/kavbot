@@ -53,14 +53,14 @@ export class ServicesService {
     };
 
     if (query.categories && query.categories.length > 0) {
-      const categories = await prisma.serviceCategory.findMany({
+      const categories = await prisma.category.findMany({
         where: { slug: { in: query.categories } },
       });
       if (categories.length > 0) {
         where.categoryId = { in: categories.map(c => c.id) };
       }
     } else if (query.category) {
-      const category = await prisma.serviceCategory.findUnique({
+      const category = await prisma.category.findUnique({
         where: { slug: query.category },
       });
       if (category) {
@@ -97,7 +97,7 @@ export class ServicesService {
       }
     }
 
-    const services = await prisma.service.findMany({
+    const services = await prisma.listing.findMany({
       where: { ...where, ...cursorCondition },
       include: {
         user: {
@@ -140,7 +140,7 @@ export class ServicesService {
   }
 
   async getService(id: string): Promise<any> {
-    const service = await prisma.service.findUnique({
+    const service = await prisma.listing.findUnique({
       where: { id },
       include: {
         user: {
@@ -173,7 +173,7 @@ export class ServicesService {
   async createService(userId: string, data: any): Promise<any> {
     const { categorySlug, tags = [], photos = [], ...serviceData } = data;
 
-    const category = await prisma.serviceCategory.findUnique({
+    const category = await prisma.category.findUnique({
       where: { slug: categorySlug },
     });
 
@@ -181,7 +181,7 @@ export class ServicesService {
       throw new NotFoundException('Category not found');
     }
 
-    const service = await prisma.service.create({
+    const service = await prisma.listing.create({
       data: {
         ...serviceData,
         userId,
@@ -190,12 +190,12 @@ export class ServicesService {
         tags: {
           create: await Promise.all(
             tags.map(async (tagSlug: string) => {
-              let tag = await prisma.serviceTag.findUnique({
+              let tag = await prisma.tag.findUnique({
                 where: { slug: tagSlug },
               });
 
               if (!tag) {
-                tag = await prisma.serviceTag.create({
+                tag = await prisma.tag.create({
                   data: {
                     slug: tagSlug,
                     name: tagSlug.charAt(0).toUpperCase() + tagSlug.slice(1),
@@ -231,7 +231,7 @@ export class ServicesService {
   }
 
   async updateService(id: string, userId: string, data: any): Promise<any> {
-    const service = await prisma.service.findUnique({ where: { id } });
+    const service = await prisma.listing.findUnique({ where: { id } });
 
     if (!service) {
       throw new NotFoundException('Service not found');
@@ -245,7 +245,7 @@ export class ServicesService {
     const updateData: any = { ...serviceData };
 
     if (categorySlug) {
-      const category = await prisma.serviceCategory.findUnique({
+      const category = await prisma.category.findUnique({
         where: { slug: categorySlug },
       });
       if (category) {
@@ -254,19 +254,19 @@ export class ServicesService {
     }
 
     if (tags) {
-      await prisma.serviceTagRelation.deleteMany({
-        where: { serviceId: id },
+      await prisma.listingTag.deleteMany({
+        where: { listingId: id },
       });
 
       updateData.tags = {
         create: await Promise.all(
           tags.map(async (tagSlug: string) => {
-            let tag = await prisma.serviceTag.findUnique({
+            let tag = await prisma.tag.findUnique({
               where: { slug: tagSlug },
             });
 
             if (!tag) {
-              tag = await prisma.serviceTag.create({
+              tag = await prisma.tag.create({
                 data: {
                   slug: tagSlug,
                   name: tagSlug.charAt(0).toUpperCase() + tagSlug.slice(1),
@@ -281,8 +281,8 @@ export class ServicesService {
     }
 
     if (photos) {
-      await prisma.servicePhoto.deleteMany({
-        where: { serviceId: id },
+      await prisma.listingPhoto.deleteMany({
+        where: { listingId: id },
       });
 
       updateData.photos = {
@@ -295,7 +295,7 @@ export class ServicesService {
       };
     }
 
-    const updated = await prisma.service.update({
+    const updated = await prisma.listing.update({
       where: { id },
       data: updateData,
       include: {
@@ -313,7 +313,7 @@ export class ServicesService {
   }
 
   async deleteService(id: string, userId: string): Promise<void> {
-    const service = await prisma.service.findUnique({ where: { id } });
+    const service = await prisma.listing.findUnique({ where: { id } });
 
     if (!service) {
       throw new NotFoundException('Service not found');
@@ -323,35 +323,38 @@ export class ServicesService {
       throw new ForbiddenException('You can only delete your own services');
     }
 
-    await prisma.service.delete({ where: { id } });
+    await prisma.listing.delete({ where: { id } });
   }
 
   async getCategories() {
-    return prisma.serviceCategory.findMany({
+    return prisma.category.findMany({
       orderBy: { name: 'asc' },
     });
   }
 
   async getPopularTags() {
-    const tags = await prisma.serviceTag.findMany({
+    const tags = await prisma.tag.findMany({
       include: {
         _count: {
-          select: { services: true },
+          select: { listings: true },
         },
       },
       orderBy: {
-        services: {
+        listings: {
           _count: 'desc',
         },
       },
       take: 20,
     });
 
-    return tags.map(({ _count, ...tag }) => tag);
+    return tags.map((tag) => {
+      const { _count, ...rest } = tag;
+      return rest;
+    });
   }
 
   async getPinnedService() {
-    const service = await prisma.service.findFirst({
+    const service = await prisma.listing.findFirst({
       where: {
         status: 'approved',
         isPinned: true,
@@ -385,7 +388,7 @@ export class ServicesService {
   }
 
   async getUserServices(userId: string) {
-    const services = await prisma.service.findMany({
+    const services = await prisma.listing.findMany({
       where: { userId },
       include: {
         category: true,
@@ -426,3 +429,8 @@ export class ServicesService {
     return newGuest.id;
   }
 }
+
+
+
+
+

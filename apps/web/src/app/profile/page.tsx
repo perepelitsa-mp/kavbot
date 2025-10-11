@@ -15,11 +15,13 @@ import {
   CheckCircle2,
   CircleDashed,
   ShieldAlert,
+  Edit,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { CreateListingDialog } from '@/components/create-listing-dialog';
+import { EditListingDialog } from '@/components/edit-listing-dialog';
 
 const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
   day: '2-digit',
@@ -117,6 +119,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingListing, setEditingListing] = useState<any | null>(null);
 
   const { data: user, isLoading: userLoading } = useQuery({
     queryKey: ['currentUser'],
@@ -145,11 +148,16 @@ export default function ProfilePage() {
     mutationFn: (id: string) => api.deleteListing(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myListings'] });
+      queryClient.invalidateQueries({ queryKey: ['listings'] });
+      queryClient.invalidateQueries({ queryKey: ['totalListings'] });
+      queryClient.invalidateQueries({ queryKey: ['featuredListing'] });
+      queryClient.invalidateQueries({ queryKey: ['pinnedListings'] });
     },
   });
 
   const handleLogout = () => {
     api.logout();
+    queryClient.clear();
     router.push('/');
     router.refresh();
   };
@@ -456,12 +464,12 @@ export default function ProfilePage() {
 
                         {listing.tags?.length > 0 && (
                           <div className="flex flex-wrap gap-2">
-                            {listing.tags.slice(0, 3).map((tag: any) => (
+                            {listing.tags.slice(0, 3).map((tag: any, index: number) => (
                               <span
-                                key={tag.id ?? tag.name}
+                                key={tag.id ?? tag.tag?.id ?? `${tag.name}-${index}`}
                                 className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground"
                               >
-                                #{tag.name}
+                                #{tag.name ?? tag.tag?.name}
                               </span>
                             ))}
                             {listing.tags.length > 3 && (
@@ -474,9 +482,14 @@ export default function ProfilePage() {
 
                         <div className="mt-auto space-y-4">
                           <div className="flex items-center justify-between text-sm text-muted-foreground">
-                            <div className="flex items-center gap-2">
-                              <Clock className="h-4 w-4" />
-                              <span>{formatListingDate(listing.updatedAt || listing.createdAt)}</span>
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-4 w-4" />
+                                <span>{formatListingDate(listing.updatedAt || listing.createdAt)}</span>
+                              </div>
+                              {listing.updatedAt && listing.createdAt && new Date(listing.updatedAt).getTime() !== new Date(listing.createdAt).getTime() && (
+                                <span className="text-xs text-muted-foreground/70">Отредактировано</span>
+                              )}
                             </div>
                             <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${statusMeta.chipClass}`}>
                               <statusMeta.icon className="h-3.5 w-3.5" />
@@ -494,7 +507,16 @@ export default function ProfilePage() {
                               }}
                             >
                               <Eye className="mr-2 h-4 w-4" />
-                              Открыть карточку
+                              Открыть
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1"
+                              onClick={() => setEditingListing(listing)}
+                            >
+                              <Edit className="mr-2 h-4 w-4" />
+                              Редактировать
                             </Button>
                             <Button
                               size="sm"
@@ -550,6 +572,17 @@ export default function ProfilePage() {
       <AnimatePresence>
         {isCreateOpen && (
           <CreateListingDialog onOpenChange={handleCreateDialogChange} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {editingListing && (
+          <EditListingDialog
+            listing={editingListing}
+            onOpenChange={(open) => {
+              if (!open) setEditingListing(null);
+            }}
+          />
         )}
       </AnimatePresence>
     </div>

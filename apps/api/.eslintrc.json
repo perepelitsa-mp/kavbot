@@ -1,0 +1,10 @@
+{
+  "extends": "../../.eslintrc.json",
+  "parserOptions": {
+    "project": "./tsconfig.json",
+    "tsconfigRootDir": "./apps/api"
+  },
+  "rules": {
+    "no-console": "error"
+  }
+}

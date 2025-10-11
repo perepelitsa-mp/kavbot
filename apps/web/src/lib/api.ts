@@ -12,7 +12,11 @@ apiClient.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('token');
     if (token) {
+      config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
+      console.log(`[API] Request to ${config.url} with token:`, token.substring(0, 20) + '...');
+    } else {
+      console.log(`[API] Request to ${config.url} without token`);
     }
   }
   return config;
@@ -32,6 +36,9 @@ export const api = {
     const { data } = await apiClient.post('/auth/register', { phone, password, firstName, lastName });
     if (data.accessToken) {
       localStorage.setItem('token', data.accessToken);
+      console.log('Token saved to localStorage:', data.accessToken.substring(0, 20) + '...');
+    } else {
+      console.error('No accessToken in response:', data);
     }
     return data;
   },
@@ -40,6 +47,9 @@ export const api = {
     const { data } = await apiClient.post('/auth/login', { phone, password });
     if (data.accessToken) {
       localStorage.setItem('token', data.accessToken);
+      console.log('Token saved to localStorage:', data.accessToken.substring(0, 20) + '...');
+    } else {
+      console.error('No accessToken in response:', data);
     }
     return data;
   },
@@ -49,7 +59,9 @@ export const api = {
   },
 
   async getMe() {
+    console.log('[API] getMe called, current token:', localStorage.getItem('token')?.substring(0, 20) + '...');
     const { data } = await apiClient.get('/auth/me');
+    console.log('[API] getMe response:', data);
     return data;
   },
 
@@ -81,10 +93,15 @@ export const api = {
     return data;
   },
 
-  async addComment(listingId: string, text: string, parentId?: string) {
+  async getPinnedListings() {
+    const { data } = await apiClient.get('/listings/pinned/all');
+    return data;
+  },
+
+  async addComment(listingId: string, text: string, parentId?: string | null) {
     const { data } = await apiClient.post(`/listings/${listingId}/comments`, {
       text,
-      parentId,
+      parentId: parentId || undefined,
     });
     return data;
   },

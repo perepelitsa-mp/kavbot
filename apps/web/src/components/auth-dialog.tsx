@@ -20,6 +20,7 @@ export function AuthDialog({ onOpenChange, onSuccess }: AuthDialogProps) {
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [consentAccepted, setConsentAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loginMutation = useMutation({
@@ -164,6 +165,41 @@ export function AuthDialog({ onOpenChange, onSuccess }: AuthDialogProps) {
                       className="bg-slate-50"
                     />
                   </div>
+
+                  <div className="pt-2">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={consentAccepted}
+                        onChange={(e) => setConsentAccepted(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 focus:ring-2 cursor-pointer"
+                        required
+                      />
+                      <span className="text-xs text-slate-600 leading-relaxed">
+                        Я подтверждаю ознакомление и даю{' '}
+                        <a
+                          href="/consent"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-indigo-600 hover:text-indigo-700 underline font-medium"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Согласие
+                        </a>
+                        {' '}на обработку моих персональных данных в порядке и на условиях, указанных в{' '}
+                        <a
+                          href="/privacy"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-indigo-600 hover:text-indigo-700 underline font-medium"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Политике конфиденциальности
+                        </a>
+                        <span className="text-rose-500">*</span>
+                      </span>
+                    </label>
+                  </div>
                 </>
               )}
 
@@ -175,7 +211,7 @@ export function AuthDialog({ onOpenChange, onSuccess }: AuthDialogProps) {
 
               <Button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || (mode === 'register' && !consentAccepted)}
                 className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white"
               >
                 {isLoading ? (
@@ -197,6 +233,7 @@ export function AuthDialog({ onOpenChange, onSuccess }: AuthDialogProps) {
                 onClick={() => {
                   setMode(mode === 'login' ? 'register' : 'login');
                   setError(null);
+                  setConsentAccepted(false);
                 }}
                 className="text-sm text-indigo-600 hover:text-indigo-700"
               >

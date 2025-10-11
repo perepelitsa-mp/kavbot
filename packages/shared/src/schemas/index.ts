@@ -45,7 +45,11 @@ export const createListingSchema = z.object({
     )
     .min(1, { message: 'Добавьте хотя бы один тег' })
     .max(10, { message: 'Можно добавить не более 10 тегов' }),
-  price: z.number({ invalid_type_error: 'Цена должна быть числом' }).optional(),
+  price: z
+    .number({ invalid_type_error: 'Цена должна быть числом' })
+    .min(0, { message: 'Цена не может быть отрицательной' })
+    .max(99999999.99, { message: 'Цена не может превышать 99 999 999.99 ₽' })
+    .optional(),
   photos: z
     .array(
       z.object({

@@ -14,7 +14,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
   // Logger
-  app.useLogger(app.get(Logger));
+  const logger = app.get(Logger);
+  app.useLogger(logger);
 
   // Security
   app.use(helmet());
@@ -32,6 +33,10 @@ async function bootstrap() {
     }),
   );
 
+  // Exception filters
+  const { PrismaExceptionFilter } = await import('./common/filters/prisma-exception.filter');
+  app.useGlobalFilters(new PrismaExceptionFilter());
+
   // Swagger
   const config = new DocumentBuilder()
     .setTitle('Kavbot API')
@@ -42,10 +47,26 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
 
+  // Graceful shutdown
+  app.enableShutdownHooks();
+
   const port = process.env.PORT || 3001;
   await app.listen(port);
-  console.log(`🚀 API running on http://localhost:${port}`);
-  console.log(`📚 Swagger docs: http://localhost:${port}/api/docs`);
+  logger.log(`🚀 API running on http://localhost:${port}`);
+  logger.log(`📚 Swagger docs: http://localhost:${port}/api/docs`);
+
+  // Handle shutdown signals
+  process.on('SIGTERM', async () => {
+    logger.log('SIGTERM signal received: closing HTTP server');
+    await app.close();
+    logger.log('HTTP server closed');
+  });
+
+  process.on('SIGINT', async () => {
+    logger.log('SIGINT signal received: closing HTTP server');
+    await app.close();
+    logger.log('HTTP server closed');
+  });
 }
 
 bootstrap();

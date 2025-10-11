@@ -2,7 +2,6 @@
 
 import { motion } from 'framer-motion';
 import { MessageCircle, Clock, Sparkles, Tag } from 'lucide-react';
-import Image from 'next/image';
 
 interface ListingCardProps {
   listing: any;
@@ -34,11 +33,10 @@ export function ListingCard({ listing, onClick }: ListingCardProps) {
       <div className="relative">
         {photo ? (
           <div className="relative w-full h-56 bg-gradient-to-br from-slate-100 to-slate-200 overflow-hidden">
-            <Image
+            <img
               src={`/api/photos/${photo.s3Key}`}
               alt={listing.title}
-              fill
-              className="object-cover transition-transform duration-500 group-hover:scale-110"
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
             />
             {/* Image overlay gradient */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />

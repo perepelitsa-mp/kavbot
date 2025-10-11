@@ -4,13 +4,95 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, MessageCircle, User, Calendar, Tag, DollarSign, Phone, Mail,
-  MapPin, Send, ChevronLeft, ChevronRight, Sparkles, Clock
+  MapPin, Send, ChevronLeft, ChevronRight, Sparkles, Clock, Reply
 } from 'lucide-react';
-import Image from 'next/image';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+
+interface CommentProps {
+  comment: any;
+  depth?: number;
+  onReply: (id: string, userName: string) => void;
+}
+
+function Comment({ comment, depth = 0, onReply }: CommentProps) {
+  const maxDepth = 8;
+  const isDeep = depth >= maxDepth;
+
+  return (
+    <div className={depth === 0 ? 'bg-slate-50 rounded-lg p-3' : ''}>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={depth > 0 ? 'ml-8 pb-3' : ''}
+      >
+        <div className="flex items-start gap-2">
+          <div
+            className={`flex-shrink-0 rounded-full flex items-center justify-center ${
+              depth === 0
+                ? 'w-8 h-8 bg-indigo-100'
+                : 'w-7 h-7 bg-purple-100'
+            }`}
+          >
+            <User
+              className={`${
+                depth === 0
+                  ? 'w-4 h-4 text-indigo-600'
+                  : 'w-3.5 h-3.5 text-purple-600'
+              }`}
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-2">
+              <p className={`font-semibold text-slate-900 truncate ${depth >= 2 ? 'text-xs' : 'text-sm'}`}>
+                {comment.user.firstName} {comment.user.lastName || ''}
+              </p>
+              <span className="text-xs text-slate-500 flex-shrink-0">
+                {new Date(comment.createdAt).toLocaleDateString('ru-RU', {
+                  day: 'numeric',
+                  month: 'short',
+                })}
+              </span>
+            </div>
+            <p className={`text-slate-700 mt-1 ${depth >= 2 ? 'text-xs' : 'text-sm'}`}>
+              {comment.parentUser ? (
+                <span className="inline-flex items-center gap-1 text-indigo-600 font-bold mr-2 bg-indigo-50 px-2 py-0.5 rounded">
+                  <Reply className="w-3.5 h-3.5" />
+                  @{comment.parentUser.firstName}
+                </span>
+              ) : null}
+              {comment.text}
+            </p>
+            {!isDeep && (
+              <button
+                onClick={() => onReply(comment.id, comment.user.firstName)}
+                className={`mt-2 flex items-center gap-1 font-medium ${
+                  depth === 0
+                    ? 'text-xs text-indigo-600 hover:text-indigo-700'
+                    : 'text-xs text-purple-600 hover:text-purple-700'
+                }`}
+              >
+                <Reply className="w-3 h-3" />
+                Ответить
+              </button>
+            )}
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Recursive replies */}
+      {comment.replies && comment.replies.length > 0 && (
+        <div className={depth === 0 ? 'mt-3 border-l-2 border-slate-200 pl-2' : ''}>
+          {comment.replies.map((reply: any) => (
+            <Comment key={reply.id} comment={reply} depth={depth + 1} onReply={onReply} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface ListingDetailModalProps {
   listingId: string;
@@ -22,6 +104,8 @@ interface ListingDetailModalProps {
 export function ListingDetailModal({ listingId, open, onClose, originPosition }: ListingDetailModalProps) {
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [commentText, setCommentText] = useState('');
+  const [isImageFullscreen, setIsImageFullscreen] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<{ id: string; userName: string } | null>(null);
   const queryClient = useQueryClient();
 
   const { data: listing, isLoading } = useQuery({
@@ -31,33 +115,42 @@ export function ListingDetailModal({ listingId, open, onClose, originPosition }:
   });
 
   const commentMutation = useMutation({
-    mutationFn: (text: string) => api.addComment(listingId, text),
+    mutationFn: ({ text, parentId }: { text: string; parentId?: string | null }) =>
+      api.addComment(listingId, text, parentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['listing', listingId] });
       setCommentText('');
+      setReplyingTo(null);
     },
   });
 
   const handleSubmitComment = () => {
     if (commentText.trim()) {
-      commentMutation.mutate(commentText);
+      commentMutation.mutate({
+        text: commentText,
+        parentId: replyingTo?.id
+      });
     }
   };
 
   // Close on Escape key
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && open) {
-        onClose();
+      if (e.key === 'Escape') {
+        if (isImageFullscreen) {
+          setIsImageFullscreen(false);
+        } else if (open) {
+          onClose();
+        }
       }
     };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [open, onClose]);
+  }, [open, onClose, isImageFullscreen]);
 
-  // Prevent body scroll when modal is open
+  // Prevent body scroll when modal or fullscreen image is open
   useEffect(() => {
-    if (open) {
+    if (open || isImageFullscreen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
@@ -65,7 +158,7 @@ export function ListingDetailModal({ listingId, open, onClose, originPosition }:
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [open]);
+  }, [open, isImageFullscreen]);
 
   if (!open) return null;
 
@@ -127,12 +220,11 @@ export function ListingDetailModal({ listingId, open, onClose, originPosition }:
               {/* Photo Gallery */}
               {listing.photos && listing.photos.length > 0 ? (
                 <div className="relative w-full h-80 sm:h-96 bg-slate-100">
-                  <Image
+                  <img
                     src={`/api/photos/${listing.photos[currentPhotoIndex].s3Key}`}
                     alt={listing.title}
-                    fill
-                    className="object-cover"
-                    priority
+                    className="absolute inset-0 w-full h-full object-cover cursor-zoom-in"
+                    onClick={() => setIsImageFullscreen(true)}
                   />
 
                   {/* Photo navigation */}
@@ -330,61 +422,54 @@ export function ListingDetailModal({ listingId, open, onClose, originPosition }:
                   </div>
 
                   {/* Comment form */}
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Написать комментарий..."
-                      value={commentText}
-                      onChange={(e) => setCommentText(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter' && commentText.trim()) {
-                          handleSubmitComment();
-                        }
-                      }}
-                      disabled={commentMutation.isPending}
-                      className="flex-1 h-10 text-sm"
-                    />
-                    <Button
-                      onClick={handleSubmitComment}
-                      disabled={!commentText.trim() || commentMutation.isPending}
-                      className="h-10 px-4 bg-indigo-600 hover:bg-indigo-700"
-                      size="sm"
-                    >
-                      <Send className="w-3.5 h-3.5 sm:mr-2" />
-                      <span className="hidden sm:inline">
-                        {commentMutation.isPending ? 'Отправка...' : 'Отправить'}
-                      </span>
-                    </Button>
+                  <div className="space-y-2">
+                    {replyingTo && (
+                      <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-100 px-3 py-2 rounded-lg">
+                        <Reply className="w-4 h-4" />
+                        <span>Ответ для {replyingTo.userName}</span>
+                        <button
+                          onClick={() => setReplyingTo(null)}
+                          className="ml-auto text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder={replyingTo ? `Ответить ${replyingTo.userName}...` : "Написать комментарий..."}
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && commentText.trim()) {
+                            handleSubmitComment();
+                          }
+                        }}
+                        disabled={commentMutation.isPending}
+                        className="flex-1 h-10 text-sm"
+                      />
+                      <Button
+                        onClick={handleSubmitComment}
+                        disabled={!commentText.trim() || commentMutation.isPending}
+                        className="h-10 px-4 bg-indigo-600 hover:bg-indigo-700"
+                        size="sm"
+                      >
+                        <Send className="w-3.5 h-3.5 sm:mr-2" />
+                        <span className="hidden sm:inline">
+                          {commentMutation.isPending ? 'Отправка...' : 'Отправить'}
+                        </span>
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Comments list */}
                   <div className="space-y-3">
                     {listing.comments?.map((comment: any) => (
-                      <motion.div
+                      <Comment
                         key={comment.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="p-3 bg-slate-50 rounded-lg"
-                      >
-                        <div className="flex items-start gap-2 mb-2">
-                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
-                            <User className="w-4 h-4 text-indigo-600" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline gap-2">
-                              <p className="font-semibold text-sm text-slate-900 truncate">
-                                {comment.user.firstName} {comment.user.lastName || ''}
-                              </p>
-                              <span className="text-xs text-slate-500 flex-shrink-0">
-                                {new Date(comment.createdAt).toLocaleDateString('ru-RU', {
-                                  day: 'numeric',
-                                  month: 'short',
-                                })}
-                              </span>
-                            </div>
-                            <p className="text-sm text-slate-700 mt-1">{comment.text}</p>
-                          </div>
-                        </div>
-                      </motion.div>
+                        comment={comment}
+                        onReply={(id, userName) => setReplyingTo({ id, userName })}
+                      />
                     ))}
 
                     {(!listing.comments || listing.comments.length === 0) && (
@@ -409,6 +494,68 @@ export function ListingDetailModal({ listingId, open, onClose, originPosition }:
           </div>
         </motion.div>
       </div>
+
+      {/* Fullscreen Image Viewer */}
+      <AnimatePresence>
+        {isImageFullscreen && listing?.photos?.[currentPhotoIndex] && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm"
+            onClick={() => setIsImageFullscreen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              className="relative max-w-[95vw] max-h-[95vh]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img
+                src={`/api/photos/${listing.photos[currentPhotoIndex].s3Key}`}
+                alt={listing.title}
+                className="max-w-full max-h-[95vh] object-contain"
+              />
+              <button
+                onClick={() => setIsImageFullscreen(false)}
+                className="absolute top-4 right-4 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              {listing.photos.length > 1 && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentPhotoIndex((prev) =>
+                        prev === 0 ? listing.photos.length - 1 : prev - 1
+                      );
+                    }}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentPhotoIndex((prev) =>
+                        prev === listing.photos.length - 1 ? 0 : prev + 1
+                      );
+                    }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-black/50 text-white text-sm">
+                    {currentPhotoIndex + 1} / {listing.photos.length}
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </AnimatePresence>
   );
 }

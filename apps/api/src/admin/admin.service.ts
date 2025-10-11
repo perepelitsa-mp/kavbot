@@ -174,25 +174,36 @@ export class AdminService {
         throw new ForbiddenException('Закреплять можно только одобренные объявления');
       }
 
-      const [, updated] = (await prisma.$transaction([
-        prisma.listing.updateMany({
-          where: {
-            isPinned: true,
-            id: { not: listingId },
-          } as any,
-          data: { isPinned: false, pinnedAt: null, pinStartsAt: null, pinEndsAt: null } as any,
-        }),
-        prisma.listing.update({
-          where: { id: listingId },
-          data: {
-            isPinned: true,
-            pinnedAt: new Date(),
-            pinStartsAt: pinStartsAt ? new Date(pinStartsAt) : null,
-            pinEndsAt: pinEndsAt ? new Date(pinEndsAt) : null,
-          } as any,
-          include: includeConfig,
-        }),
-      ])) as [any, any];
+      // Check current pinned count
+      const now = new Date();
+      const pinnedCount = await prisma.listing.count({
+        where: {
+          isPinned: true,
+          status: 'approved',
+          id: { not: listingId },
+          OR: [
+            { AND: [{ pinStartsAt: null }, { pinEndsAt: null }] },
+            { AND: [{ pinStartsAt: { lte: now } }, { pinEndsAt: null }] },
+            { AND: [{ pinStartsAt: null }, { pinEndsAt: { gte: now } }] },
+            { AND: [{ pinStartsAt: { lte: now } }, { pinEndsAt: { gte: now } }] },
+          ],
+        } as any,
+      });
+
+      if (pinnedCount >= 3) {
+        throw new BadRequestException('Уже закреплено максимальное количество объявлений (3). Открепите одно из текущих, чтобы закрепить новое.');
+      }
+
+      const updated = (await prisma.listing.update({
+        where: { id: listingId },
+        data: {
+          isPinned: true,
+          pinnedAt: new Date(),
+          pinStartsAt: pinStartsAt ? new Date(pinStartsAt) : null,
+          pinEndsAt: pinEndsAt ? new Date(pinEndsAt) : null,
+        } as any,
+        include: includeConfig,
+      }) as any);
 
       return this.formatListing(updated);
     }

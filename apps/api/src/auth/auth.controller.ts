@@ -71,7 +71,10 @@ export class AuthController {
   @Post('login')
   @ApiOperation({ summary: 'Login user by phone' })
   async login(@Body() dto: LoginDto) {
-    return this.authService.loginByPhone(dto.phone, dto.password);
+    console.log('[AuthController] Login attempt for phone:', dto.phone);
+    const result = await this.authService.loginByPhone(dto.phone, dto.password);
+    console.log('[AuthController] Login successful, token generated');
+    return result;
   }
 
   @Get('me')
@@ -79,6 +82,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user profile' })
   async me(@CurrentUser() user: any) {
+    console.log('[AuthController] /me called with user:', user);
     return this.authService.getUser(user.sub);
   }
 }

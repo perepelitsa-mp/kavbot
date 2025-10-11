@@ -46,17 +46,32 @@ export class ListingsController {
   @Get('filters')
   @ApiOperation({ summary: 'Get available categories and popular tags' })
   async getFilters() {
-    const [categories, tags] = await Promise.all([
+    const [categories, tags, totalUsers] = await Promise.all([
       this.listingsService.getCategories(),
       this.listingsService.getPopularTags(),
+      this.listingsService.getTotalUsers(),
     ]);
-    return { categories, tags };
+    return { categories, tags, totalUsers };
   }
 
   @Get('pinned')
   @ApiOperation({ summary: 'Get pinned listing' })
   async getPinnedListing() {
     return this.listingsService.getPinnedListing();
+  }
+
+  @Get('pinned/all')
+  @ApiOperation({ summary: 'Get all pinned listings (up to 3)' })
+  async getPinnedListings() {
+    return this.listingsService.getPinnedListings();
+  }
+
+  @Get('my')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current user listings' })
+  async getMyListings(@CurrentUser() user: any): Promise<any> {
+    return this.listingsService.getUserListings(user.sub);
   }
 
   @Get(':id')
@@ -66,35 +81,34 @@ export class ListingsController {
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Create new listing' })
   async createListing(@CurrentUser() user: any, @Body() data: any): Promise<any> {
-    const userId = user?.sub || (await this.listingsService.getOrCreateGuestUser());
-    return this.listingsService.createListing(userId, data);
+    return this.listingsService.createListing(user.sub, data);
   }
 
   @Post(':id/comments')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Add comment to listing' })
   async addComment(
+    @CurrentUser() user: any,
     @Param('id') id: string,
-    @Body() data: { text: string; parentId?: string; userId?: string },
+    @Body() data: { text: string; parentId?: string },
   ) {
-    // В dev режиме используем тестового пользователя если не авторизован
-    const userId = data.userId || (await this.listingsService.getOrCreateGuestUser());
-    return this.listingsService.addComment(id, userId, data.text, data.parentId);
+    return this.listingsService.addComment(id, user.sub, data.text, data.parentId);
   }
 
   @Post('upload/presigned')
   @ApiOperation({ summary: 'Get presigned URL for photo upload' })
   async getPresignedUrl(@Body() data: { filename: string; contentType: string }) {
-    return this.s3Service.getPresignedUploadUrl(data.filename, data.contentType);
-  }
-
-  @Get('my')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get current user listings' })
-  async getMyListings(@CurrentUser() user: any): Promise<any> {
-    return this.listingsService.getUserListings(user.sub);
+    try {
+      return await this.s3Service.getPresignedUploadUrl(data.filename, data.contentType);
+    } catch (error) {
+      console.error('Failed to get presigned URL:', error);
+      throw error;
+    }
   }
 
   @Put(':id')

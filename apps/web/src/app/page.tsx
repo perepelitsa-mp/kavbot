@@ -79,20 +79,13 @@ function HomePageContent() {
     queryFn: api.getFilters,
   });
 
-  const { data: pinnedListingData } = useQuery({
-    queryKey: ['pinnedListing'],
-    queryFn: api.getPinnedListing,
+  const { data: pinnedListingsData } = useQuery({
+    queryKey: ['pinnedListings'],
+    queryFn: api.getPinnedListings,
     staleTime: 1000 * 60,
   });
 
-  const pinnedListing = pinnedListingData ?? null;
-
-  const { data: featuredListingData } = useQuery({
-    queryKey: ['featuredListing'],
-    queryFn: () => api.getListings({ cursor: undefined }),
-    staleTime: 1000 * 60,
-    enabled: !pinnedListing,
-  });
+  const pinnedListings = pinnedListingsData ?? [];
 
   const { data: totalListingsData } = useQuery({
     queryKey: ['totalListings'],
@@ -102,8 +95,8 @@ function HomePageContent() {
 
   const allCategories = filtersData?.categories ?? [];
   const totalCategories = allCategories.length;
-  const totalTags = filtersData?.tags?.length ?? 0;
-  const totalListings = totalListingsData?.items?.length ?? 0;
+  const totalUsers = filtersData?.totalUsers ?? 0;
+  const totalListings = totalListingsData?.total ?? 0;
 
   const {
     data,
@@ -125,16 +118,11 @@ function HomePageContent() {
   });
 
   const listings = data?.pages.flatMap((page) => page.items) || [];
-  const featuredListing = pinnedListing ?? featuredListingData?.items?.[0] ?? null;
+  const pinnedIds = pinnedListings.map((l: any) => l.id);
   const visibleListings = useMemo(
-    () => {
-      if (!featuredListing) return listings;
-      return listings.filter((listing) => listing.id !== featuredListing.id);
-    },
-    [listings, featuredListing?.id],
+    () => listings.filter((listing) => !pinnedIds.includes(listing.id)),
+    [listings, pinnedIds],
   );
-  const heroSectionLabel = pinnedListing ? 'Закреплённое объявление' : 'Объявление дня';
-  const heroBadgeLabel = pinnedListing ? 'Проверено командой' : 'Новинка недели';
 
   const stats = useMemo(
     () => [
@@ -147,11 +135,11 @@ function HomePageContent() {
         value: new Intl.NumberFormat('ru-RU').format(totalCategories),
       },
       {
-        label: 'Доступных тегов',
-        value: new Intl.NumberFormat('ru-RU').format(totalTags),
+        label: 'Пользователей',
+        value: new Intl.NumberFormat('ru-RU').format(totalUsers),
       },
     ],
-    [totalListings, totalCategories, totalTags],
+    [totalListings, totalCategories, totalUsers],
   );
 
   return (
@@ -226,7 +214,7 @@ function HomePageContent() {
               Находите и делитесь лучшими объявлениями в Кавалерово
             </h1>
             <p className="text-lg text-white/70 sm:text-xl">
-              Локальные услуги, работа, товары и события — всё, что важно вашему району, в одном месте.
+              Локальные услуги, работа, товары и события — всё, что важно нашему району, в одном месте.
             </p>
           </motion.div>
 
@@ -265,92 +253,70 @@ function HomePageContent() {
             ))}
           </motion.div>
 
-          {featuredListing && (
+          {pinnedListings.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.45, duration: 0.6 }}
-              className="mt-12 grid gap-6 lg:grid-cols-[1.1fr_minmax(0,0.9fr)]"
+              className="mt-12"
             >
-              <div className="group relative overflow-hidden rounded-3xl border-2 border-white/20 bg-gradient-to-br from-white/15 to-white/5 p-8 backdrop-blur-lg shadow-2xl">
-                {/* Decorative gradient orbs */}
-                <div className="absolute -top-20 -right-20 w-40 h-40 bg-gradient-to-br from-amber-400/30 to-orange-500/30 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-                <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-gradient-to-br from-indigo-400/20 to-purple-500/20 rounded-full blur-2xl" />
-
-                <div className="relative z-10">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm border border-white/20">
-                      <Flame className="h-4 w-4 text-amber-300" />
-                      <p className="text-xs font-bold uppercase tracking-wider text-white/90">{heroSectionLabel}</p>
-                    </div>
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold tracking-wide ${
-                        pinnedListing
-                          ? 'border-amber-300/50 bg-gradient-to-r from-amber-400/20 to-orange-400/20 text-amber-100 shadow-lg shadow-amber-500/20'
-                          : 'border-white/30 bg-white/10 text-white/90'
-                      }`}
-                    >
-                      <Sparkles className="h-3 w-3" />
-                      {heroBadgeLabel}
-                    </span>
-                  </div>
-                  <h3 className="mt-4 text-3xl font-bold leading-tight line-clamp-2 text-white">
-                    {featuredListing.title}
-                  </h3>
-                  {featuredListing.description && (
-                    <p className="mt-4 text-base text-white/80 line-clamp-3 leading-relaxed">
-                      {featuredListing.description}
-                    </p>
-                  )}
-                  <div className="mt-8 flex flex-wrap items-center gap-3">
-                    <Button
-                      onClick={() => setSelectedListingId(featuredListing.id)}
-                      className="group/btn bg-white text-slate-900 hover:bg-white font-semibold px-6 py-2.5 rounded-xl shadow-lg shadow-white/20 hover:shadow-xl hover:shadow-white/30 transition-all"
-                    >
-                      <span>Открыть объявление</span>
-                      <ArrowRight className="ml-2 h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
-                    </Button>
-                    {featuredListing.category?.name && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (featuredListing.category?.slug) {
-                            setCategories([featuredListing.category.slug]);
-                          }
-                        }}
-                        className="group/link inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-white/80 transition-all hover:text-white hover:bg-white/10"
-                      >
-                        Перейти в категорию
-                        <ArrowRight className="h-4 w-4 group-hover/link:translate-x-1 transition-transform" />
-                      </button>
-                    )}
-                  </div>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20">
+                  <Flame className="h-5 w-5 text-amber-300" />
+                  <p className="text-sm font-bold uppercase tracking-wider text-white/90">Закреплённые объявления</p>
                 </div>
               </div>
-              <div className="relative overflow-hidden rounded-3xl border-2 border-white/20 bg-white/5 shadow-2xl">
-                {featuredListing.photos?.length ? (
-                  <>
-                    <img
-                      src={`/api/photos/${featuredListing.photos[0].s3Key}`}
-                      alt={featuredListing.title}
-                      className="h-full w-full object-cover transition-transform duration-700 hover:scale-105"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-tr from-slate-900/40 via-transparent to-transparent" />
 
-                    {/* Shine effect */}
-                    <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-500">
-                      <div className="absolute top-0 -left-full h-full w-1/2 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-12 animate-[shimmer_3s_infinite]" />
+              <div className={`grid gap-6 ${pinnedListings.length === 1 ? 'grid-cols-1 max-w-3xl' : pinnedListings.length === 2 ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
+                {pinnedListings.map((listing: any, index: number) => (
+                  <motion.div
+                    key={listing.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.5 + index * 0.1, duration: 0.5 }}
+                    className="group relative overflow-hidden rounded-3xl border-2 border-white/20 bg-gradient-to-br from-white/15 to-white/5 p-6 backdrop-blur-lg shadow-2xl hover:scale-[1.02] transition-transform duration-300 cursor-pointer"
+                    onClick={() => setSelectedListingId(listing.id)}
+                  >
+                    {/* Decorative gradient orbs */}
+                    <div className="absolute -top-20 -right-20 w-40 h-40 bg-gradient-to-br from-amber-400/30 to-orange-500/30 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+                    <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-gradient-to-br from-indigo-400/20 to-purple-500/20 rounded-full blur-2xl" />
+
+                    <div className="relative z-10">
+                      <div className="flex items-center gap-2 mb-4">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-gradient-to-r from-amber-400/20 to-orange-400/20 px-3 py-1 text-xs font-bold tracking-wide text-amber-100 shadow-lg shadow-amber-500/20">
+                          <Sparkles className="h-3 w-3" />
+                          Проверено командой
+                        </span>
+                      </div>
+
+                      {listing.photos?.length > 0 && (
+                        <div className="mb-4 overflow-hidden rounded-2xl border border-white/20">
+                          <img
+                            src={`/api/photos/${listing.photos[0].s3Key}`}
+                            alt={listing.title}
+                            className="w-full h-48 object-cover transition-transform duration-700 group-hover:scale-110"
+                          />
+                        </div>
+                      )}
+
+                      <h3 className="text-2xl font-bold leading-tight line-clamp-2 text-white">
+                        {listing.title}
+                      </h3>
+                      {listing.description && (
+                        <p className="mt-3 text-sm text-white/80 line-clamp-2 leading-relaxed">
+                          {listing.description}
+                        </p>
+                      )}
+                      <div className="mt-4 flex items-center gap-2">
+                        {listing.category?.name && (
+                          <span className="inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/90">
+                            {listing.category.name}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </>
-                ) : (
-                  <div className="flex h-full min-h-[300px] flex-col items-center justify-center bg-gradient-to-br from-white/5 to-white/10">
-                    <div className="relative">
-                      <div className="absolute inset-0 blur-2xl bg-gradient-to-br from-indigo-400/20 via-purple-400/20 to-pink-400/20" />
-                      <span className="relative text-6xl opacity-50">📦</span>
-                    </div>
-                    <p className="mt-4 text-sm font-medium text-white/50">Фото пока нет</p>
-                  </div>
-                )}
+                  </motion.div>
+                ))}
               </div>
             </motion.div>
           )}
